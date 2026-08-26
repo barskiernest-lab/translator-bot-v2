@@ -49,9 +49,9 @@ async function translateText(text, src, dst) {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${dst}&dt=t&q=${encodeURIComponent(text)}`;
     const res = await fetch(url);
     const data = await res.json();
-    return data[0].map(p => p[0]).join("") || "❌ Ошибка перевода";
+    return data[0].map(p => p[0]).join("") || "Oшибка перевода";
   } catch (e) {
-    return "❌ Ошибка: " + e.message;
+    return "Oшибка: " + e.message;
   }
 }
 
@@ -59,7 +59,7 @@ function buildMainText(userId) {
   const s = getUserSettings(userId);
   const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstLabel = LANGUAGES[s.dst] || s.dst;
-  return `🌐 *Бот-переводчик*\n\n📝 С языка: *${srcLabel}*\n🔄 На язык: *${dstLabel}*\n\nОтправь текст или перешли сообщение.`;
+  return `Бот-переводчик\n\nС языка: ${srcLabel}\nНа язык: ${dstLabel}\n\nОтправь текст или перешли сообщение.`;
 }
 
 function mainMenuKeyboard(userId) {
@@ -67,21 +67,21 @@ function mainMenuKeyboard(userId) {
   const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstLabel = LANGUAGES[s.dst] || s.dst;
   return { inline_keyboard: [
-    [{ text: "📝 " + srcLabel, callback_data: "menu_src" }, { text: "🔄 " + dstLabel, callback_data: "menu_dst" }],
-    [{ text: "💱 Поменять местами", callback_data: "swap_langs" }]
+    [{ text: srcLabel, callback_data: "menu_src" }, { text: dstLabel, callback_data: "menu_dst" }],
+    [{ text: "Поменять местами", callback_data: "swap_langs" }]
   ]};
 }
 
 function langKeyboard(isSource) {
   const prefix = isSource ? "set_src_" : "set_dst_";
-  const btns = [[{ text: "🔄 Автоопределение", callback_data: prefix + "auto" }]];
+  const btns = [[{ text: "Автоопределение", callback_data: prefix + "auto" }]];
   const codes = Object.keys(LANGUAGES);
   for (let i = 0; i < codes.length; i += 2) {
     const row = [{ text: LANGUAGES[codes[i]], callback_data: prefix + codes[i] }];
     if (i + 1 < codes.length) row.push({ text: LANGUAGES[codes[i+1]], callback_data: prefix + codes[i+1] });
     btns.push(row);
   }
-  btns.push([{ text: "🔙 Назад", callback_data: "back_main" }]);
+  btns.push([{ text: "Назад", callback_data: "back_main" }]);
   return { inline_keyboard: btns };
 }
 
@@ -98,12 +98,12 @@ async function handleMessage(msg) {
     const translated = await translateText(text, src, s.dst);
     const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
     const dstLabel = LANGUAGES[s.dst] || s.dst;
-    return sendText(chatId, `📝 *${srcLabel}* → *${dstLabel}*\n\n${translated}`, mainMenuKeyboard(userId));
+    return sendText(chatId, `${srcLabel} -> ${dstLabel}\n\n${translated}`, mainMenuKeyboard(userId));
   }
 
   if (text === "/start") {
     return sendText(chatId,
-      "🌐 *Бот-переводчик*\n\nВыбери языки и отправь текст или перешли сообщение.",
+      "Бот-переводчик\n\nВыбери языки и отправь текст или перешли сообщение.",
       mainMenuKeyboard(userId));
   }
 
@@ -113,7 +113,7 @@ async function handleMessage(msg) {
     const translated = await translateText(text, src, s.dst);
     const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
     const dstLabel = LANGUAGES[s.dst] || s.dst;
-    return sendText(chatId, `📝 *${srcLabel}* → *${dstLabel}*\n\n${translated}`, mainMenuKeyboard(userId));
+    return sendText(chatId, `${srcLabel} -> ${dstLabel}\n\n${translated}`, mainMenuKeyboard(userId));
   }
 }
 
@@ -129,10 +129,10 @@ async function handleCallback(cb) {
     return editMessage(chatId, messageId, buildMainText(userId), mainMenuKeyboard(userId));
   }
   if (data === "menu_src") {
-    return editMessage(chatId, messageId, "📝 *Выбери исходный язык:*", langKeyboard(true));
+    return editMessage(chatId, messageId, "Выбери исходный язык:", langKeyboard(true));
   }
   if (data === "menu_dst") {
-    return editMessage(chatId, messageId, "🔄 *Выбери язык перевода:*", langKeyboard(false));
+    return editMessage(chatId, messageId, "Выбери язык перевода:", langKeyboard(false));
   }
   if (data === "swap_langs") {
     const s = getUserSettings(userId);
@@ -157,20 +157,33 @@ async function handleCallback(cb) {
   }
 }
 
-module.exports = async (req, res) => {
-  if (req.method !== "POST") return res.status(200).send("ok");
+export default async function handler(req, res) {
+  res.setHeader("Content-Type", "application/json");
 
-  try {
-    const data = req.body;
-
-    if (data.callback_query) {
-      await handleCallback(data.callback_query);
-    } else if (data.message) {
-      await handleMessage(data.message);
-    }
-  } catch (err) {
-    console.error(err);
+  if (req.method === "GET") {
+    return res.status(200).json({ status: "ok" });
   }
 
-  res.status(200).json({ ok: true });
-};
+  if (req.method !== "POST") {
+    return res.status(200).json({ status: "ok" });
+  }
+
+  try {
+    let body = req.body;
+    if (!body) {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      body = JSON.parse(Buffer.concat(chunks).toString());
+    }
+
+    if (body.callback_query) {
+      await handleCallback(body.callback_query);
+    } else if (body.message) {
+      await handleMessage(body.message);
+    }
+  } catch (err) {
+    console.error("Error:", err);
+  }
+
+  return res.status(200).json({ ok: true });
+}
