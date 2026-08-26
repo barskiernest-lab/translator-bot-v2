@@ -2,7 +2,7 @@ const BOT_TOKEN = "8951253222:AAFzQy0a7hl-u9U1j2wkMeT2GZX6XRBDtcc";
 
 const LANGUAGES = {
   ru: "Русский", en: "English", uk: "Українська",
-  de: "Deutsch", fr: "Français", es: "Español",
+  de: "Deutsch", fr: "Français", es: "Españол",
   it: "Italiano", pt: "Português", zh: "中文",
   ja: "日本語", ko: "한국어", ar: "العربية",
   tr: "Türkçe", pl: "Polski", nl: "Nederlands",
@@ -26,13 +26,13 @@ async function api(method, payload) {
 }
 
 async function sendText(chatId, text, replyMarkup) {
-  const p = { chat_id: chatId, text, parse_mode: "Markdown" };
+  const p = { chat_id: chatId, text };
   if (replyMarkup) p.reply_markup = JSON.stringify(replyMarkup);
   return api("sendMessage", p);
 }
 
 async function editMessage(chatId, messageId, text, replyMarkup) {
-  const p = { chat_id: chatId, message_id: messageId, text, parse_mode: "Markdown" };
+  const p = { chat_id: chatId, message_id: messageId, text };
   if (replyMarkup) p.reply_markup = JSON.stringify(replyMarkup);
   return api("editMessageText", p);
 }
@@ -59,7 +59,7 @@ function buildMainText(userId) {
   const s = getUserSettings(userId);
   const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstLabel = LANGUAGES[s.dst] || s.dst;
-  return `Бот-переводчик\n\nС языка: ${srcLabel}\nНа язык: ${dstLabel}\n\nОтправь текст или перешли сообщение.`;
+  return "Бот-переводчик\n\nС языка: " + srcLabel + "\nНа язык: " + dstLabel + "\n\nОтправь текст или перешли сообщение.";
 }
 
 function mainMenuKeyboard(userId) {
@@ -87,7 +87,6 @@ function langKeyboard(isSource) {
 
 async function handleMessage(msg) {
   if (!msg.from || msg.from.is_bot) return;
-
   const chatId = msg.chat.id;
   const userId = msg.from.id;
   const text = msg.text || "";
@@ -98,13 +97,11 @@ async function handleMessage(msg) {
     const translated = await translateText(text, src, s.dst);
     const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
     const dstLabel = LANGUAGES[s.dst] || s.dst;
-    return sendText(chatId, `${srcLabel} -> ${dstLabel}\n\n${translated}`, mainMenuKeyboard(userId));
+    return sendText(chatId, srcLabel + " -> " + dstLabel + "\n\n" + translated, mainMenuKeyboard(userId));
   }
 
   if (text === "/start") {
-    return sendText(chatId,
-      "Бот-переводчик\n\nВыбери языки и отправь текст или перешли сообщение.",
-      mainMenuKeyboard(userId));
+    return sendText(chatId, "Бот-переводчик\n\nВыбери языки и отправь текст или перешли сообщение.", mainMenuKeyboard(userId));
   }
 
   if (text && !text.startsWith("/")) {
@@ -113,7 +110,7 @@ async function handleMessage(msg) {
     const translated = await translateText(text, src, s.dst);
     const srcLabel = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
     const dstLabel = LANGUAGES[s.dst] || s.dst;
-    return sendText(chatId, `${srcLabel} -> ${dstLabel}\n\n${translated}`, mainMenuKeyboard(userId));
+    return sendText(chatId, srcLabel + " -> " + dstLabel + "\n\n" + translated, mainMenuKeyboard(userId));
   }
 }
 
@@ -157,33 +154,35 @@ async function handleCallback(cb) {
   }
 }
 
-export default async function handler(req, res) {
-  res.setHeader("Content-Type", "application/json");
-
+module.exports = async function handler(req, res) {
   if (req.method === "GET") {
-    return res.status(200).json({ status: "ok" });
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({ status: "ok" });
+    return;
   }
 
-  if (req.method !== "POST") {
-    return res.status(200).json({ status: "ok" });
+  let body = {};
+  try {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString();
+    body = JSON.parse(raw);
+  } catch (e) {
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json({ ok: true });
+    return;
   }
 
   try {
-    let body = req.body;
-    if (!body) {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      body = JSON.parse(Buffer.concat(chunks).toString());
-    }
-
     if (body.callback_query) {
       await handleCallback(body.callback_query);
     } else if (body.message) {
       await handleMessage(body.message);
     }
   } catch (err) {
-    console.error("Error:", err);
+    console.error("Handler error:", err);
   }
 
-  return res.status(200).json({ ok: true });
-}
+  res.setHeader("Content-Type", "application/json");
+  res.status(200).json({ ok: true });
+};
