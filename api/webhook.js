@@ -149,7 +149,7 @@ async function onCallback(cb) {
   }
 }
 
-exports.default = async function (req, res) {
+module.exports = async function (req, res) {
   const body = req.body || {};
   try {
     if (body.message) await onMessage(body.message);
