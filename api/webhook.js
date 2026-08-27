@@ -9,12 +9,23 @@ const LANGUAGES = {
   hi: "हिन्दी", kk: "Қазақша", uz: "O'zbekcha"
 };
 
-const userSettings = {};
+const TZ_CITIES = {
+  "Москва": "Europe/Moscow", "Лондон": "Europe/London", "Нью-Йорк": "America/New_York",
+  "Токио": "Asia/Tokyo", "Пекин": "Asia/Shanghai", "Париж": "Europe/Paris",
+  "Берлин": "Europe/Berlin", "Дубай": "Asia/Dubai", "Бангкок": "Asia/Bangkok",
+  "Сеул": "Asia/Seoul", "Каир": "Africa/Cairo", "Сидней": "Australia/Sydney",
+  "Лос-Анджелес": "America/Los_Angeles", "Санкт-Петербург": "Europe/Moscow",
+  "Киев": "Europe/Kiev", "Астана": "Asia/Almaty", "Минск": "Europe/Minsk",
+  "Стамбул": "Europe/Istanbul", "Рим": "Europe/Rome", "Мадрид": "Europe/Madrid"
+};
 
-function gs(uid) {
-  if (!userSettings[uid]) userSettings[uid] = { src: "auto", dst: "ru" };
-  return userSettings[uid];
-}
+const userState = {};
+const userData = {};
+
+function getState(uid) { return userState[uid] || null; }
+function setState(uid, state) { userState[uid] = state; }
+function clearState(uid) { delete userState[uid]; }
+function getData(uid) { if (!userData[uid]) userData[uid] = { src: "auto", dst: "ru" }; return userData[uid]; }
 
 async function tg(method, payload) {
   try {
@@ -26,24 +37,25 @@ async function tg(method, payload) {
   } catch (e) {}
 }
 
-async function sendText(chatId, text, rm) {
-  const p = { chat_id: chatId, text: text };
+async function send(chatId, text, rm) {
+  const p = { chat_id: chatId, text: text, parse_mode: "Markdown" };
   if (rm) p.reply_markup = JSON.stringify(rm);
   await tg("sendMessage", p);
 }
 
-async function editMsg(chatId, msgId, text, rm) {
-  const p = { chat_id: chatId, message_id: msgId, text: text };
+async function edit(chatId, msgId, text, rm) {
+  const p = { chat_id: chatId, message_id: msgId, text: text, parse_mode: "Markdown" };
   if (rm) p.reply_markup = JSON.stringify(rm);
   await tg("editMessageText", p);
 }
 
-async function answerCb(id, text, alert) {
+async function answer(id, text, alert) {
   const p = { callback_query_id: id, text: text || "" };
   if (alert) p.show_alert = true;
   await tg("answerCallbackQuery", p);
 }
 
+// ─── TRANSLATE ───
 async function translate(text, src, dst) {
   try {
     const sl = src === "auto" ? "auto" : src;
@@ -52,7 +64,7 @@ async function translate(text, src, dst) {
     if (!res.ok) throw new Error("fail");
     const data = await res.json();
     if (data && data[0]) return data[0].map(function(p) { return p[0]; }).join("");
-  } catch (e1) {}
+  } catch (e) {}
   try {
     const url2 = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) + "&langpair=" + (src === "auto" ? "en" : src) + "|" + dst;
     const res2 = await fetch(url2, { signal: AbortSignal.timeout(8000) });
@@ -62,20 +74,22 @@ async function translate(text, src, dst) {
   return "Oшибка перевода";
 }
 
-function mainText(uid) {
-  const s = gs(uid);
-  const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
-  const dstL = LANGUAGES[s.dst] || s.dst;
-  return "Бот-переводчик\n\nС языка: " + srcL + "\nНа язык: " + dstL + "\n\nОтправь текст или перешли сообщение.";
-}
-
+// ─── KEYBOARDS ───
 function mainKb(uid) {
-  const s = gs(uid);
+  const s = getData(uid);
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
   return { inline_keyboard: [
-    [{ text: srcL, callback_data: "menu_src" }, { text: dstL, callback_data: "menu_dst" }],
-    [{ text: "Поменять местами", callback_data: "swap_langs" }]
+    [{ text: "🌐 Переводчик", callback_data: "tr_menu" }],
+    [{ text: "📝 " + srcL, callback_data: "tr_src" }, { text: "🔄 " + dstL, callback_data: "tr_dst" }],
+    [{ text: "💱 Поменять языки", callback_data: "tr_swap" }],
+    [{ text: "──── Утилиты ────", callback_data: "noop" }],
+    [{ text: "🎲 Случайное число", callback_data: "util_random" },
+     { text: "🧮 Калькулятор", callback_data: "util_calc" }],
+    [{ text: "🔐 Пароль", callback_data: "util_pass" },
+     { text: "📊 Счётчик", callback_data: "util_count" }],
+    [{ text: "📏 Конвертер", callback_data: "util_convert" },
+     { text: "🕐 Часы", callback_data: "util_time" }]
   ]};
 }
 
@@ -92,33 +106,16 @@ function langKb(isSrc) {
   return { inline_keyboard: btns };
 }
 
-async function onMessage(msg) {
-  if (!msg || !msg.from || msg.from.is_bot) return;
-  const chatId = msg.chat.id;
-  const uid = msg.from.id;
-  const text = msg.text || "";
+function backKb() { return { inline_keyboard: [[{ text: "Назад", callback_data: "back_main" }]] }; }
 
-  if ((msg.forward_from || msg.forward_sender_name) && text && !text.startsWith("/")) {
-    const s = gs(uid);
-    const t = await translate(text, s.src === "auto" ? "auto" : s.src, s.dst);
-    const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
-    const dstL = LANGUAGES[s.dst] || s.dst;
-    await sendText(chatId, srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
-    return;
-  }
-  if (text === "/start") {
-    await sendText(chatId, mainText(uid), mainKb(uid));
-    return;
-  }
-  if (text && !text.startsWith("/")) {
-    const s = gs(uid);
-    const t = await translate(text, s.src === "auto" ? "auto" : s.src, s.dst);
-    const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
-    const dstL = LANGUAGES[s.dst] || s.dst;
-    await sendText(chatId, srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
-  }
+function mainText(uid) {
+  const s = getData(uid);
+  const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
+  const dstL = LANGUAGES[s.dst] || s.dst;
+  return "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
 }
 
+// ─── CALLBACKS ───
 async function onCallback(cb) {
   if (!cb || !cb.message) return;
   const chatId = cb.message.chat.id;
@@ -126,29 +123,251 @@ async function onCallback(cb) {
   const uid = cb.from.id;
   const data = cb.data;
 
-  answerCb(cb.id, "");
+  answer(cb.id, "");
 
-  if (data === "back_main") { await editMsg(chatId, msgId, mainText(uid), mainKb(uid)); }
-  else if (data === "menu_src") { await editMsg(chatId, msgId, "Выбери исходный язык:", langKb(true)); }
-  else if (data === "menu_dst") { await editMsg(chatId, msgId, "Выбери язык перевода:", langKb(false)); }
-  else if (data === "swap_langs") {
-    const s = gs(uid);
-    if (s.src === "auto") { answerCb(cb.id, "Нельзя", true); return; }
+  // translator
+  if (data === "tr_menu") {
+    clearState(uid);
+    return edit(chatId, msgId, mainText(uid), mainKb(uid));
+  }
+  if (data === "back_main") {
+    clearState(uid);
+    return edit(chatId, msgId, mainText(uid), mainKb(uid));
+  }
+  if (data === "noop") { return; }
+  if (data === "tr_src") {
+    return edit(chatId, msgId, "Выбери исходный язык:", langKb(true));
+  }
+  if (data === "tr_dst") {
+    return edit(chatId, msgId, "Выбери язык перевода:", langKb(false));
+  }
+  if (data === "tr_swap") {
+    const s = getData(uid);
+    if (s.src === "auto") { answer(cb.id, "Нельзя при автоопределении", true); return; }
     s.dst = s.src; s.src = "auto";
-    await editMsg(chatId, msgId, mainText(uid), mainKb(uid));
+    return edit(chatId, msgId, mainText(uid), mainKb(uid));
   }
-  else if (data.startsWith("set_src_")) {
-    userSettings[uid] = userSettings[uid] || { src: "auto", dst: "ru" };
-    userSettings[uid].src = data.replace("set_src_", "");
-    await editMsg(chatId, msgId, mainText(uid), mainKb(uid));
+  if (data.startsWith("set_src_")) {
+    const code = data.replace("set_src_", "");
+    getData(uid).src = code;
+    return edit(chatId, msgId, mainText(uid), mainKb(uid));
   }
-  else if (data.startsWith("set_dst_")) {
-    userSettings[uid] = userSettings[uid] || { src: "auto", dst: "ru" };
-    userSettings[uid].dst = data.replace("set_dst_", "");
-    await editMsg(chatId, msgId, mainText(uid), mainKb(uid));
+  if (data.startsWith("set_dst_")) {
+    const code = data.replace("set_dst_", "");
+    getData(uid).dst = code;
+    return edit(chatId, msgId, mainText(uid), mainKb(uid));
+  }
+
+  // utilities
+  if (data === "util_random") {
+    setState(uid, "wait_random");
+    return edit(chatId, msgId, "🎲 Введи диапазон:\n\nПример: `1 100` или `-10 10`", backKb());
+  }
+  if (data === "util_calc") {
+    setState(uid, "wait_calc");
+    return edit(chatId, msgId, "🧮 Введи выражение:\n\nПример: `2 + 2 * 3`", backKb());
+  }
+  if (data === "util_pass") {
+    setState(uid, "wait_pass");
+    return edit(chatId, msgId, "🔐 Введи длину пароля:\n\nПример: `16`", backKb());
+  }
+  if (data === "util_count") {
+    setState(uid, "wait_count");
+    return edit(chatId, msgId, "📊 Отправь текст для подсчёта:", backKb());
+  }
+  if (data === "util_convert") {
+    const kb = { inline_keyboard: [
+      [{ text: "Длина", callback_data: "conv_len" }, { text: "Вес", callback_data: "conv_wt" }],
+      [{ text: "Температура", callback_data: "conv_tmp" }],
+      [{ text: "Назад", callback_data: "back_main" }]
+    ]};
+    return edit(chatId, msgId, "📏 Выбери тип конвертации:", kb);
+  }
+  if (data === "conv_len") {
+    setState(uid, "wait_conv_len");
+    return edit(chatId, msgId, "📏 Введи значение и единицы:\n\nПример: `100 км в мили`\nДоступно: км, м, см, мм, мили, ярды, футы, дюймы", backKb());
+  }
+  if (data === "conv_wt") {
+    setState(uid, "wait_conv_wt");
+    return edit(chatId, msgId, "⚖️ Введи значение и единицы:\n\nПример: `70 кг в фунты`\nДоступно: кг, г, фунты, унции", backKb());
+  }
+  if (data === "conv_tmp") {
+    setState(uid, "wait_conv_tmp");
+    return edit(chatId, msgId, "🌡 Введи температуру:\n\nПример: `36.6 C в F` или `0 F в C`", backKb());
+  }
+  if (data === "util_time") {
+    const kb = { inline_keyboard: [] };
+    const cities = Object.keys(TZ_CITIES);
+    for (let i = 0; i < cities.length; i += 2) {
+      const row = [{ text: cities[i], callback_data: "tz_" + cities[i] }];
+      if (i + 1 < cities.length) row.push({ text: cities[i+1], callback_data: "tz_" + cities[i+1] });
+      kb.inline_keyboard.push(row);
+    }
+    kb.inline_keyboard.push([{ text: "Назад", callback_data: "back_main" }]);
+    return edit(chatId, msgId, "🕐 Выбери город:", kb);
+  }
+  if (data.startsWith("tz_")) {
+    const city = data.replace("tz_", "");
+    const tz = TZ_CITIES[city];
+    if (!tz) return;
+    const now = new Date();
+    const time = now.toLocaleTimeString("ru-RU", { timeZone: tz, hour: "2-digit", minute: "2-digit" });
+    const date = now.toLocaleDateString("ru-RU", { timeZone: tz, day: "numeric", month: "long", year: "numeric" });
+    return edit(chatId, msgId, "🕐 *" + city + "*\n\n⏰ " + time + "\n📅 " + date, backKb());
   }
 }
 
+// ─── MESSAGES ───
+async function onMessage(msg) {
+  if (!msg || !msg.from || msg.from.is_bot) return;
+  const chatId = msg.chat.id;
+  const uid = msg.from.id;
+  const text = msg.text || "";
+  const st = getState(uid);
+
+  // translate forwarded
+  if ((msg.forward_from || msg.forward_sender_name) && text && !text.startsWith("/")) {
+    clearState(uid);
+    const s = getData(uid);
+    const t = await translate(text, s.src === "auto" ? "auto" : s.src, s.dst);
+    const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
+    const dstL = LANGUAGES[s.dst] || s.dst;
+    return send(chatId, "🌐 " + srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
+  }
+
+  if (text === "/start") {
+    clearState(uid);
+    return send(chatId, mainText(uid), mainKb(uid));
+  }
+
+  if (!st) {
+    // default: translate
+    if (text && !text.startsWith("/")) {
+      const s = getData(uid);
+      const t = await translate(text, s.src === "auto" ? "auto" : s.src, s.dst);
+      const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
+      const dstL = LANGUAGES[s.dst] || s.dst;
+      return send(chatId, "🌐 " + srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
+    }
+    return;
+  }
+
+  // random
+  if (st === "wait_random") {
+    clearState(uid);
+    try {
+      const parts = text.split(/[\s,]+/).map(Number);
+      const min = Math.min(parts[0], parts[1]);
+      const max = Math.max(parts[0], parts[1]);
+      const result = Math.floor(Math.random() * (max - min + 1)) + min;
+      return send(chatId, "🎲 *" + result + "*\n\n(" + min + " - " + max + ")", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Формат: `1 100`", mainKb(uid));
+    }
+  }
+
+  // calculator
+  if (st === "wait_calc") {
+    clearState(uid);
+    try {
+      const expr = text.replace(/[^0-9+\-*/.() ]/g, "");
+      if (!expr) throw new Error();
+      const result = Function('"use strict"; return (' + expr + ')')();
+      return send(chatId, "🧮 *" + result + "*", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Неверное выражение", mainKb(uid));
+    }
+  }
+
+  // password
+  if (st === "wait_pass") {
+    clearState(uid);
+    const len = parseInt(text);
+    if (!len || len < 4 || len > 100) {
+      return send(chatId, "Длина от 4 до 100", mainKb(uid));
+    }
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+    let pass = "";
+    for (let i = 0; i < len; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    return send(chatId, "🔐 `" + pass + "`\n\n(" + len + " символов)", mainKb(uid));
+  }
+
+  // counter
+  if (st === "wait_count") {
+    clearState(uid);
+    const chars = text.length;
+    const words = text.trim().split(/\s+/).filter(function(w) { return w.length > 0; }).length;
+    const lines = text.split("\n").length;
+    const noSpaces = text.replace(/\s/g, "").length;
+    return send(chatId,
+      "📊 *Результат*\n\n" +
+      "Символов: " + chars + "\n" +
+      "Без пробелов: " + noSpaces + "\n" +
+      "Слов: " + words + "\n" +
+      "Строк: " + lines, mainKb(uid));
+  }
+
+  // converter length
+  if (st === "wait_conv_len") {
+    clearState(uid);
+    try {
+      const match = text.match(/([\d.,]+)\s*(\S+)\s+в\s+(\S+)/i);
+      if (!match) throw new Error();
+      const val = parseFloat(match[1].replace(",", "."));
+      const from = match[2].toLowerCase();
+      const to = match[3].toLowerCase();
+      const toM = { "км": 1000, "km": 1000, "м": 1, "m": 1, "см": 0.01, "cm": 0.01, "мм": 0.001, "mm": 0.001, "мили": 1609.344, "миля": 1609.344, "miles": 1609.344, "ярды": 0.9144, "yard": 0.9144, "ярд": 0.9144, "футы": 0.3048, "фут": 0.3048, "ft": 0.3048, "foot": 0.3048, "дюймы": 0.0254, "дюйм": 0.0254, "in": 0.0254, "inch": 0.0254 };
+      if (!toM[from] || !toM[to]) throw new Error();
+      const result = (val * toM[from] / toM[to]);
+      return send(chatId, "📏 *" + val + " " + match[2] + "* = *" + result.toFixed(4) + " " + match[3] + "*", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Формат: `100 км в мили`\nДоступно: км, м, см, мм, мили, ярды, футы, дюймы", mainKb(uid));
+    }
+  }
+
+  // converter weight
+  if (st === "wait_conv_wt") {
+    clearState(uid);
+    try {
+      const match = text.match(/([\d.,]+)\s*(\S+)\s+в\s+(\S+)/i);
+      if (!match) throw new Error();
+      const val = parseFloat(match[1].replace(",", "."));
+      const from = match[2].toLowerCase();
+      const to = match[3].toLowerCase();
+      const toKg = { "кг": 1, "kg": 1, "г": 0.001, "g": 0.001, "фунты": 0.453592, "фунт": 0.453592, "lbs": 0.453592, "lb": 0.453592, "унции": 0.0283495, "унция": 0.0283495, "oz": 0.0283495 };
+      if (!toKg[from] || !toKg[to]) throw new Error();
+      const result = (val * toKg[from] / toKg[to]);
+      return send(chatId, "⚖️ *" + val + " " + match[2] + "* = *" + result.toFixed(4) + " " + match[3] + "*", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Формат: `70 кг в фунты`\nДоступно: кг, г, фунты, унции", mainKb(uid));
+    }
+  }
+
+  // converter temp
+  if (st === "wait_conv_tmp") {
+    clearState(uid);
+    try {
+      const match = text.match(/([\d.,]+)\s*(C|F|K)\s+в\s*(C|F|K)/i);
+      if (!match) throw new Error();
+      const val = parseFloat(match[1].replace(",", "."));
+      const from = match[2].toUpperCase();
+      const to = match[3].toUpperCase();
+      let celsius;
+      if (from === "C") celsius = val;
+      else if (from === "F") celsius = (val - 32) * 5 / 9;
+      else celsius = val - 273.15;
+      let result;
+      if (to === "C") result = celsius;
+      else if (to === "F") result = celsius * 9 / 5 + 32;
+      else result = celsius + 273.15;
+      return send(chatId, "🌡 *" + val + " " + from + "* = *" + result.toFixed(2) + " " + to + "*", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Формат: `36.6 C в F` или `0 F в C`", mainKb(uid));
+    }
+  }
+}
+
+// ─── HANDLER ───
 module.exports = async function (req, res) {
   const body = req.body || {};
   try {
