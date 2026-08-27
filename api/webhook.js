@@ -76,6 +76,46 @@ async function translate(text, src, dst) {
   return "Oшибка перевода";
 }
 
+// ─── CURRENCY ───
+const FX_CACHE = { at: 0, rates: null };
+const FX_NAMES = { USD: "Доллар", EUR: "Евро", RUB: "Рубль", KZT: "Тенге", GBP: "Фунт", CNY: "Юань", UAH: "Гривна", JPY: "Йена" };
+
+async function getFxRates() {
+  if (FX_CACHE.rates && (Date.now() - FX_CACHE.at < 6 * 60 * 60 * 1000)) return FX_CACHE.rates;
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD", { signal: AbortSignal.timeout(8000) });
+    const data = await res.json();
+    const r = data.rates || {};
+    const rates = {};
+    Object.keys(FX_NAMES).forEach(function(c) { rates[c] = r[c] || null; });
+    FX_CACHE.rates = rates;
+    FX_CACHE.at = Date.now();
+    return rates;
+  } catch (e) {
+    return FX_CACHE.rates;
+  }
+}
+
+async function showRates(chatId, msgId) {
+  const rates = await getFxRates();
+  if (!rates) {
+    const kb = { inline_keyboard: [[{ text: "Повторить", callback_data: "util_rates" }, { text: "Назад", callback_data: "back_main" }]] };
+    return edit(chatId, msgId, "💱 Не удалось получить курс. Попробуй позже.", kb);
+  }
+  const rub = rates.RUB;
+  const kzt = rates.KZT;
+  let txt = "💱 *Курс валют* (к 1 USD)\n\n";
+  ["EUR", "RUB", "KZT", "GBP", "CNY", "UAH", "JPY"].forEach(function(c) {
+    if (rates[c]) txt += FX_NAMES[c] + " (" + c + "): `" + rates[c].toFixed(2) + "`\n";
+  });
+  if (rub && kzt) {
+    txt += "\n🇷🇺 За 1 USD — *" + rub.toFixed(2) + " ₽*\n";
+    txt += "🇰🇿 За 1 USD — *" + kzt.toFixed(2) + " ₸*\n";
+  }
+  const kb = { inline_keyboard: [[{ text: "🔄 Обновить", callback_data: "util_rates" }, { text: "Назад", callback_data: "back_main" }]] };
+  return edit(chatId, msgId, txt, kb);
+}
+
 // ─── KEYBOARDS ───
 function mainKb(uid) {
   const s = getData(uid);
@@ -91,7 +131,9 @@ function mainKb(uid) {
     [{ text: "🔐 Пароль", callback_data: "util_pass" },
      { text: "📊 Счётчик", callback_data: "util_count" }],
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
-     { text: "🕐 Часы", callback_data: "util_time" }],
+     { text: "💱 Курс валют", callback_data: "util_rates" }],
+    [{ text: "🕐 Часы", callback_data: "util_time" },
+     { text: "📱 Проверка номера", callback_data: "util_number" }],
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
      { text: "🖤 Стиль-страница", callback_data: "util_page" }],
     [{ text: "⚖️ BMI", callback_data: "util_bmi" },
@@ -184,7 +226,7 @@ async function onCallback(cb) {
   if (data === "util_convert") {
     const kb = { inline_keyboard: [
       [{ text: "Длина", callback_data: "conv_len" }, { text: "Вес", callback_data: "conv_wt" }],
-      [{ text: "Температура", callback_data: "conv_tmp" }],
+      [{ text: "Температура", callback_data: "conv_tmp" }, { text: "💱 Валюта", callback_data: "conv_cur" }],
       [{ text: "Назад", callback_data: "back_main" }]
     ]};
     return edit(chatId, msgId, "📏 Выбери тип конвертации:", kb);
@@ -201,6 +243,17 @@ async function onCallback(cb) {
     setState(uid, "wait_conv_tmp");
     return edit(chatId, msgId, "🌡 Введи температуру:\n\nПример: `36.6 C в F` или `0 F в C`", backKb());
   }
+  if (data === "conv_cur") {
+    setState(uid, "wait_conv_cur");
+    return edit(chatId, msgId, "💱 Введи сумму и валюты:\n\nПример: `100 USD в RUB`\n\nВалюты: USD, EUR, RUB, KZT, GBP, CNY, UAH, JPY", backKb());
+  }
+  if (data === "util_rates") {
+    return showRates(chatId, msgId);
+  }
+  if (data === "util_number") {
+    setState(uid, "wait_number");
+    return edit(chatId, msgId, "📱 Введи номер телефона в международном формате:\n\nПример: `+79261234567` или `77051234567`", backKb());
+  }
   if (data === "util_time") {
     const kb = { inline_keyboard: [] };
     const cities = Object.keys(TZ_CITIES);
@@ -209,8 +262,13 @@ async function onCallback(cb) {
       if (i + 1 < cities.length) row.push({ text: cities[i+1], callback_data: "tz_" + cities[i+1] });
       kb.inline_keyboard.push(row);
     }
+    kb.inline_keyboard.push([{ text: "⏰ Дата / обратный отсчёт", callback_data: "util_reminder" }]);
     kb.inline_keyboard.push([{ text: "Назад", callback_data: "back_main" }]);
     return edit(chatId, msgId, "🕐 Выбери город:", kb);
+  }
+  if (data === "util_reminder") {
+    setState(uid, "wait_reminder");
+    return edit(chatId, msgId, "⏰ Введи дату в формате `ДД.ММ.ГГГГ` или `ДД.ММ.ГГГГ 12:30`:\n\nНапример: `25.12.2026`", backKb());
   }
   if (data === "util_qr") {
     setState(uid, "wait_qr");
@@ -500,6 +558,72 @@ async function onMessage(msg) {
     } catch (e) {
       return send(chatId, "Формат: `36.6 C в F` или `0 F в C`", mainKb(uid));
     }
+  }
+
+  // converter currency
+  if (st === "wait_conv_cur") {
+    clearState(uid);
+    try {
+      const match = text.match(/([\d.,]+)\s*([A-Za-z]{3})\s+в\s+([A-Za-z]{3})/i);
+      if (!match) throw new Error();
+      const val = parseFloat(match[1].replace(",", "."));
+      const from = match[2].toUpperCase();
+      const to = match[3].toUpperCase();
+      if (!FX_NAMES[from] || !FX_NAMES[to]) throw new Error();
+      const rates = await getFxRates();
+      if (!rates || !rates[from] || !rates[to]) throw new Error();
+      const result = val * rates[to] / rates[from];
+      return send(chatId, "💱 *" + val + " " + FX_NAMES[from] + " (" + from + ")* = *" + result.toFixed(2) + " " + FX_NAMES[to] + " (" + to + ")*", mainKb(uid));
+    } catch (e) {
+      return send(chatId, "Формат: `100 USD в RUB`\n\nВалюты: USD, EUR, RUB, KZT, GBP, CNY, UAH, JPY", mainKb(uid));
+    }
+  }
+
+  // number check
+  if (st === "wait_number") {
+    clearState(uid);
+    const digits = text.replace(/[^\d+]/g, "");
+    if (!/^\+\d{7,15}$|^\d{10,15}$/.test(digits)) {
+      return send(chatId, "Введи номер в формате `+79261234567` или `77051234567`", mainKb(uid));
+    }
+    let country = "—";
+    if (/^(\+7|8|7)/.test(digits)) country = "🇷🇺 Россия (или Казахстан)";
+    else if (/^\+380|^0/.test(digits)) country = "🇺🇦 Украина";
+    else if (/^\+375/.test(digits)) country = "🇧🇾 Беларусь";
+    else if (/^\+49/.test(digits)) country = "🇩🇪 Германия";
+    else if (/^\+44/.test(digits)) country = "🇬🇧 Великобритания";
+    else if (/^\+1/.test(digits)) country = "🇺🇸 США/Канада";
+    else if (/^\+33/.test(digits)) country = "🇫🇷 Франция";
+    else if (/^\+86/.test(digits)) country = "🇨🇳 Китай";
+    else if (/^\+34/.test(digits)) country = "🇪🇸 Испания";
+    else if (/^\+90/.test(digits)) country = "🇹🇷 Турция";
+    else if (/^\+972/.test(digits)) country = "🇮🇱 Израиль";
+    else if (/^\+998/.test(digits)) country = "🇺🇿 Узбекистан";
+    let operator = "—";
+    if (/^(\+7|8|7)[9]\d/.test(digits)) operator = "📶 Мобильный (РФ)";
+    const beaut = digits.length >= 10 ? digits.slice(0, 4) + " " + digits.slice(4, 7) + " " + digits.slice(7, 9) + " " + digits.slice(9, 11) + " " + digits.slice(11) : digits;
+    return send(chatId, "📱 *Проверка номера*\n\n🔢 Номер: `" + beaut + "`\n🌍 Страна: " + country + "\n📶 Тип: " + operator, mainKb(uid));
+  }
+
+  // reminder / countdown
+  if (st === "wait_reminder") {
+    clearState(uid);
+    const m = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+    if (!m) return send(chatId, "Формат: `25.12.2026` или `25.12.2026 12:30`", mainKb(uid));
+    const target = new Date(m[3], m[2] - 1, m[1], m[4] || 0, m[5] || 0, 0);
+    const now = new Date();
+    const diff = target - now;
+    if (diff < 0) return send(chatId, "Эта дата уже прошла", mainKb(uid));
+    const days = Math.floor(diff / 86400000);
+    const hours = Math.floor((diff % 86400000) / 3600000);
+    const mins = Math.floor((diff % 3600000) / 60000);
+    const dateStr = m[1] + "." + m[2] + "." + m[3] + (m[4] ? " " + m[4] + ":" + m[5] : "");
+    let remaining;
+    if (days > 0) remaining = days + " дн " + hours + " ч " + mins + " мин";
+    else if (hours > 0) remaining = hours + " ч " + mins + " мин";
+    else remaining = mins + " мин";
+    const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][target.getDay()];
+    return send(chatId, "⏰ *До даты:* " + dateStr + " (" + wd + ")\n\n⏳ Осталось: *" + remaining + "*", mainKb(uid));
   }
 }
 
