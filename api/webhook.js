@@ -295,6 +295,19 @@ async function onMessage(msg) {
     return send(chatId, mainText(uid), mainKb(uid));
   }
 
+  if (text === "/myid" || text.startsWith("/myid ")) {
+    clearState(uid);
+    const u = msg.from;
+    return send(chatId,
+      "🆔 *Твои данные:*\n\n" +
+      "👤 Имя: " + (u.first_name || "—") + "\n" +
+      "🧑 Фамилия: " + (u.last_name || "—") + "\n" +
+      "🔗 Username: " + (u.username ? "@" + u.username : "—") + "\n" +
+      "🆔 User ID: `" + u.id + "`\n" +
+      "💬 Язык: " + (u.language_code || "—") +
+      "\n\nСкинь друзьям!", mainKb(uid));
+  }
+
   if (!st) {
     // default: translate
     if (text && !text.startsWith("/")) {
@@ -494,6 +507,16 @@ async function onMessage(msg) {
 module.exports = async function (req, res) {
   const body = req.body || {};
   try {
+    if (body.message && body.message.text === "/start") {
+      try {
+        await tg("setMyCommands", {
+          commands: [
+            { command: "start", description: "Главное меню" },
+            { command: "myid", description: "Мои данные" }
+          ]
+        });
+      } catch (e) {}
+    }
     if (body.message) await onMessage(body.message);
     if (body.callback_query) await onCallback(body.callback_query);
   } catch (e) {
