@@ -21,6 +21,8 @@ const TZ_CITIES = {
 
 const userState = {};
 const userData = {};
+const userPageBg = {};
+const userBmi = {};
 
 function getState(uid) { return userState[uid] || null; }
 function setState(uid, state) { userState[uid] = state; }
@@ -215,12 +217,33 @@ async function onCallback(cb) {
     return edit(chatId, msgId, "🔲 Введи текст или ссылку для QR-кода:", backKb());
   }
   if (data === "util_page") {
+    const kb = { inline_keyboard: [
+      [{ text: "⬛ Чёрный", callback_data: "pagebg_000000" }, { text: "⬜ Белый", callback_data: "pagebg_ffffff" }],
+      [{ text: "🟥 Красный", callback_data: "pagebg_8e0000" }, { text: "🟦 Синий", callback_data: "pagebg_003399" }],
+      [{ text: "🟩 Зелёный", callback_data: "pagebg_006600" }, { text: "🟪 Фиолетовый", callback_data: "pagebg_4b0082" }],
+      [{ text: "🟧 Оранжевый", callback_data: "pagebg_cc5500" }, { text: "🟫 Серый", callback_data: "pagebg_333333" }],
+      [{ text: "Назад", callback_data: "back_main" }]
+    ]};
+    return edit(chatId, msgId, "🖤 *Стиль-страница*\n\nВыбери цвет фона:", kb);
+  }
+  if (data.startsWith("pagebg_")) {
+    const bg = data.replace("pagebg_", "");
     setState(uid, "wait_page");
-    return edit(chatId, msgId, "🖤 Введи текст для стиль-страницы:\n\nОн будет на чёрном фоне.", backKb());
+    userPageBg[uid] = bg;
+    return edit(chatId, msgId, "🖤 Введи текст для страницы:\n\nЦвет: `#" + bg + "`\n\nОтправь текст:", backKb());
   }
   if (data === "util_bmi") {
-    setState(uid, "wait_bmi");
-    return edit(chatId, msgId, "⚖️ Введи вес и рост:\n\nПример: `70 175` (кг и см)", backKb());
+    const kb = { inline_keyboard: [
+      [{ text: "👨 Мужчина", callback_data: "bmisex_m" }, { text: "👩 Женщина", callback_data: "bmisex_f" }],
+      [{ text: "Назад", callback_data: "back_main" }]
+    ]};
+    return edit(chatId, msgId, "⚖️ *BMI калькулятор*\n\nВыбери пол:", kb);
+  }
+  if (data === "bmisex_m" || data === "bmisex_f") {
+    const sex = data === "bmisex_m" ? "m" : "f";
+    setState(uid, "wait_bmi_age");
+    userPageBg[uid] = sex;
+    return edit(chatId, msgId, "⚖️ Введи возраст (лет):", backKb());
   }
   if (data === "util_myid") {
     const u = cb.from;
@@ -353,15 +376,29 @@ async function onMessage(msg) {
   // style page
   if (st === "wait_page") {
     clearState(uid);
+    const bg = userPageBg[uid] || "000000";
+    delete userPageBg[uid];
     const pageId = Buffer.from(text).toString("base64").replace(/=+$/, "");
-    const url = "https://translator-bot-v2-six.vercel.app/api/page?id=" + encodeURIComponent(pageId);
-    await send(chatId, "🖤 *Стиль-страница готова!*\n\n📄 *Текст:*\n" + text.substring(0, 200) + "\n\n🔗 *Ссылка:*\n" + url + "\n\nПерейди по ссылке — там твой текст на чёрном фоне!", mainKb(uid));
+    const url = "https://translator-bot-v2-six.vercel.app/api/page?id=" + encodeURIComponent(pageId) + "&bg=" + bg;
+    await send(chatId, "🖤 *Стиль-страница готова!*\n\n📄 *Текст:*\n" + text.substring(0, 200) + "\n\n🎨 *Фон:* #" + bg + "\n\n🔗 *Ссылка:*\n" + url + "\n\nПерейди по ссылке!", mainKb(uid));
     return;
+  }
+
+  // BMI age
+  if (st === "wait_bmi_age") {
+    const age = parseInt(text);
+    if (!age || age < 5 || age > 120) return send(chatId, "Введи возраст от 5 до 120:", backKb());
+    userBmi[uid] = { sex: userPageBg[uid] || "m", age: age };
+    delete userPageBg[uid];
+    setState(uid, "wait_bmi");
+    return send(chatId, "📏 Теперь введи вес и рост:\n\nПример: `70 175` (кг и см)", backKb());
   }
 
   // BMI
   if (st === "wait_bmi") {
     clearState(uid);
+    const bmiData = userBmi[uid] || {};
+    delete userBmi[uid];
     const parts = text.replace(",", ".").split(/[\s,]+/).map(Number);
     const kg = parts[0];
     const cm = parts[1];
@@ -370,6 +407,7 @@ async function onMessage(msg) {
     }
     const m = cm / 100;
     const bmi = kg / (m * m);
+    const sexLabel = bmiData.sex === "m" ? "👨 Мужчина" : "👩 Женщина";
     let category;
     if (bmi < 18.5) category = "⚠️ Недостаточный вес";
     else if (bmi < 25) category = "✅ Норма";
@@ -377,6 +415,8 @@ async function onMessage(msg) {
     else category = "🔴 Ожирение";
     return send(chatId,
       "⚖️ *Результат BMI*\n\n" +
+      sexLabel + "\n" +
+      "🎂 Возраст: " + (bmiData.age || "—") + " лет\n" +
       "📏 Вес: " + kg + " кг\n" +
       "📐 Рост: " + cm + " см\n\n" +
       "🧮 **BMI: " + bmi.toFixed(1) + "**\n" +

@@ -1,7 +1,6 @@
 module.exports = async function (req, res) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
 
-  // plain /api/page returns nothing useful
   if (!req.query.id) {
     res.status(200).send("Telegram Utils - add a page id");
     return;
@@ -15,11 +14,13 @@ module.exports = async function (req, res) {
   }
   if (!text) text = "Страница не найдена";
 
+  const bg = /^[0-9a-fA-F]{6}$/.test(req.query.bg || "") ? "#" + req.query.bg : "#000000";
+
   const escaped = text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;").replace(/\n/g, "<br>");
 
   const html = `<!DOCTYPE html>
 <html>
@@ -31,7 +32,7 @@ module.exports = async function (req, res) {
 body {
   margin: 0;
   padding: 0;
-  background-color: #000000;
+  background-color: ${bg};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -46,7 +47,6 @@ body {
   max-width: 600px;
   line-height: 1.6;
   word-break: break-word;
-  white-space: pre-wrap;
 }
 </style>
 </head>
