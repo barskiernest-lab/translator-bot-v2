@@ -122,22 +122,44 @@ function mainKb(uid) {
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
   return { inline_keyboard: [
-    [{ text: "🌐 Переводчик", callback_data: "tr_menu" }],
+    [{ text: "🌐 Перевод", callback_data: "grp_tr" },
+     { text: "🛠 Инструменты", callback_data: "grp_tools" },
+     { text: "📡 Прочее", callback_data: "grp_misc" }]
+  ]};
+}
+
+function trKb(uid) {
+  const s = getData(uid);
+  const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
+  const dstL = LANGUAGES[s.dst] || s.dst;
+  return { inline_keyboard: [
     [{ text: "📝 " + srcL, callback_data: "tr_src" }, { text: "🔄 " + dstL, callback_data: "tr_dst" }],
     [{ text: "💱 Поменять языки", callback_data: "tr_swap" }],
-    [{ text: "──── Утилиты ────", callback_data: "noop" }],
-    [{ text: "🎲 Случайное число", callback_data: "util_random" },
-     { text: "🧮 Калькулятор", callback_data: "util_calc" }],
-    [{ text: "🔐 Пароль", callback_data: "util_pass" },
-     { text: "📊 Счётчик", callback_data: "util_count" }],
+    [{ text: "← Назад", callback_data: "back_main" }]
+  ]};
+}
+
+function toolsKb() {
+  return { inline_keyboard: [
+    [{ text: "🧮 Калькулятор", callback_data: "util_calc" },
+     { text: "🎲 Случайное число", callback_data: "util_random" }],
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
-     { text: "💱 Курс валют", callback_data: "util_rates" }],
-    [{ text: "🕐 Часы", callback_data: "util_time" },
-     { text: "📱 Проверка номера", callback_data: "util_number" }],
-    [{ text: "🔲 QR-код", callback_data: "util_qr" },
-     { text: "🖤 Стиль-страница", callback_data: "util_page" }],
-    [{ text: "⚖️ BMI", callback_data: "util_bmi" },
-     { text: "🪞 Переворот текста", callback_data: "util_flip" }]
+     { text: "🔐 Пароль", callback_data: "util_pass" }],
+    [{ text: "📊 Счётчик", callback_data: "util_count" },
+     { text: "🪞 Переворот текста", callback_data: "util_flip" }],
+    [{ text: "⚖️ BMI", callback_data: "util_bmi" }],
+    [{ text: "← Назад", callback_data: "back_main" }]
+  ]};
+}
+
+function miscKb() {
+  return { inline_keyboard: [
+    [{ text: "💱 Курс валют", callback_data: "util_rates" },
+     { text: "🕐 Часы", callback_data: "util_time" }],
+    [{ text: "📱 Проверка номера", callback_data: "util_number" },
+     { text: "🔲 QR-код", callback_data: "util_qr" }],
+    [{ text: "🖤 Стиль-страница", callback_data: "util_page" }],
+    [{ text: "← Назад", callback_data: "back_main" }]
   ]};
 }
 
@@ -160,7 +182,7 @@ function mainText(uid) {
   const s = getData(uid);
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
-  return "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
+  return "Telegram Utils\n\n🌐 Перевод: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода сразу, или выбери группу утилит ниже:";
 }
 
 // ─── CALLBACKS ───
@@ -173,10 +195,22 @@ async function onCallback(cb) {
 
   answer(cb.id, "");
 
-  // translator
+  // groups
+  if (data === "grp_tr") {
+    clearState(uid);
+    return edit(chatId, msgId, mainText(uid), trKb(uid));
+  }
+  if (data === "grp_tools") {
+    clearState(uid);
+    return edit(chatId, msgId, "🛠 *Инструменты*\n\nВыбери инструмент:", toolsKb());
+  }
+  if (data === "grp_misc") {
+    clearState(uid);
+    return edit(chatId, msgId, "📡 *Прочее*\n\nВыбери сервис:", miscKb());
+  }
   if (data === "tr_menu") {
     clearState(uid);
-    return edit(chatId, msgId, mainText(uid), mainKb(uid));
+    return edit(chatId, msgId, mainText(uid), trKb(uid));
   }
   if (data === "back_main") {
     clearState(uid);
