@@ -91,8 +91,7 @@ function mainKb(uid) {
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
      { text: "🕐 Часы", callback_data: "util_time" }],
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
-     { text: "🔗 Ссылка", callback_data: "util_link" }],
-    [{ text: "🖤 Стиль-страница", callback_data: "util_page" }]
+     { text: "🖤 Стиль-страница", callback_data: "util_page" }]
   ]};
 }
 
@@ -213,10 +212,6 @@ async function onCallback(cb) {
     setState(uid, "wait_qr");
     return edit(chatId, msgId, "🔲 Введи текст или ссылку для QR-кода:", backKb());
   }
-  if (data === "util_link") {
-    setState(uid, "wait_link");
-    return edit(chatId, msgId, "🔗 Введи текст для создания ссылки:", backKb());
-  }
   if (data === "util_page") {
     setState(uid, "wait_page");
     return edit(chatId, msgId, "🖤 Введи текст для стиль-страницы:\n\nОн будет на чёрном фоне.", backKb());
@@ -331,14 +326,7 @@ async function onMessage(msg) {
     return;
   }
 
-  // link maker
-  if (st === "wait_link") {
-    clearState(uid);
-    const input = text.trim();
-    const fullUrl = /^https?:\/\//i.test(input) ? input : "https://" + input;
-    await send(chatId, "🔗 *Ссылка готова:*\n\n" + fullUrl, mainKb(uid));
-    return;
-  }
+  // link maker removed
 
   // style page
   if (st === "wait_page") {
