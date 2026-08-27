@@ -80,7 +80,8 @@ function mainKb(uid) {
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
   return { inline_keyboard: [
-    [{ text: "🌐 Переводчик", callback_data: "tr_menu" }],
+    [{ text: "🌐 Переводчик", callback_data: "tr_menu" },
+     { text: "⚡ Быстрые", callback_data: "menu_quick" }],
     [{ text: "📝 " + srcL, callback_data: "tr_src" }, { text: "🔄 " + dstL, callback_data: "tr_dst" }],
     [{ text: "💱 Поменять языки", callback_data: "tr_swap" }],
     [{ text: "──── Утилиты ────", callback_data: "noop" }],
@@ -93,7 +94,7 @@ function mainKb(uid) {
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
      { text: "🖤 Стиль-страница", callback_data: "util_page" }],
     [{ text: "⚖️ BMI", callback_data: "util_bmi" },
-     { text: "🆔 Мои данные", callback_data: "util_myid" }]
+     { text: "🪞 Переворот текста", callback_data: "util_flip" }]
   ]};
 }
 
@@ -233,6 +234,17 @@ async function onCallback(cb) {
       "💬 Язык: " + (u.language_code || "—") +
       "\n\nСкинь друзьям!";
     return edit(chatId, msgId, txt, backKb());
+  }
+  if (data === "menu_quick") {
+    const kb = { inline_keyboard: [
+      [{ text: "🆔 Мои данные", callback_data: "util_myid" }],
+      [{ text: "Назад", callback_data: "back_main" }]
+    ]};
+    return edit(chatId, msgId, "⚡ *Быстрые команды:*", kb);
+  }
+  if (data === "util_flip") {
+    setState(uid, "wait_flip");
+    return edit(chatId, msgId, "🪞 Введи текст для переворота:", backKb());
   }
   if (data.startsWith("tz_")) {
     const city = data.replace("tz_", "");
@@ -377,6 +389,13 @@ async function onMessage(msg) {
       "📐 Рост: " + cm + " см\n\n" +
       "🧮 **BMI: " + bmi.toFixed(1) + "**\n" +
       "📊 " + category, mainKb(uid));
+  }
+
+  // flip text
+  if (st === "wait_flip") {
+    clearState(uid);
+    const flipped = text.split("").reverse().join("");
+    return send(chatId, "🪞 *Перевёрнутый текст:*\n\n" + flipped, mainKb(uid));
   }
 
   // converter length
