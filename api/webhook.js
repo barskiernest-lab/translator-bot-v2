@@ -90,7 +90,8 @@ function mainKb(uid) {
      { text: "📊 Счётчик", callback_data: "util_count" }],
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
      { text: "🕐 Часы", callback_data: "util_time" }],
-    [{ text: "🔲 QR-код", callback_data: "util_qr" }]
+    [{ text: "🔲 QR-код", callback_data: "util_qr" },
+     { text: "🔗 Ссылка", callback_data: "util_link" }]
   ]};
 }
 
@@ -211,6 +212,10 @@ async function onCallback(cb) {
     setState(uid, "wait_qr");
     return edit(chatId, msgId, "🔲 Введи текст или ссылку для QR-кода:", backKb());
   }
+  if (data === "util_link") {
+    setState(uid, "wait_link");
+    return edit(chatId, msgId, "🔗 Введи текст для создания ссылки:", backKb());
+  }
   if (data.startsWith("tz_")) {
     const city = data.replace("tz_", "");
     const tz = TZ_CITIES[city];
@@ -318,6 +323,15 @@ async function onMessage(msg) {
     const qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=" + encodeURIComponent(text);
     await tg("sendPhoto", { chat_id: chatId, photo: qrUrl, caption: "QR-код для: " + text.substring(0, 100) });
     await send(chatId, "", mainKb(uid));
+    return;
+  }
+
+  // link maker
+  if (st === "wait_link") {
+    clearState(uid);
+    const input = text.trim();
+    const fullUrl = /^https?:\/\//i.test(input) ? input : "https://" + input;
+    await send(chatId, "🔗 *Ссылка готова:*\n\n" + fullUrl, mainKb(uid));
     return;
   }
 
