@@ -91,7 +91,8 @@ function mainKb(uid) {
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
      { text: "🕐 Часы", callback_data: "util_time" }],
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
-     { text: "🔗 Ссылка", callback_data: "util_link" }]
+     { text: "🔗 Ссылка", callback_data: "util_link" }],
+    [{ text: "🖤 Стиль-страница", callback_data: "util_page" }]
   ]};
 }
 
@@ -216,6 +217,10 @@ async function onCallback(cb) {
     setState(uid, "wait_link");
     return edit(chatId, msgId, "🔗 Введи текст для создания ссылки:", backKb());
   }
+  if (data === "util_page") {
+    setState(uid, "wait_page");
+    return edit(chatId, msgId, "🖤 Введи текст для стиль-страницы:\n\nОн будет на чёрном фоне.", backKb());
+  }
   if (data.startsWith("tz_")) {
     const city = data.replace("tz_", "");
     const tz = TZ_CITIES[city];
@@ -332,6 +337,15 @@ async function onMessage(msg) {
     const input = text.trim();
     const fullUrl = /^https?:\/\//i.test(input) ? input : "https://" + input;
     await send(chatId, "🔗 *Ссылка готова:*\n\n" + fullUrl, mainKb(uid));
+    return;
+  }
+
+  // style page
+  if (st === "wait_page") {
+    clearState(uid);
+    const pageId = Buffer.from(text).toString("base64").replace(/=+$/, "");
+    const url = "https://translator-bot-v2-six.vercel.app/api/page?id=" + encodeURIComponent(pageId);
+    await send(chatId, "🖤 *Стиль-страница готова!*\n\n📄 *Текст:*\n" + text.substring(0, 200) + "\n\n🔗 *Ссылка:*\n" + url + "\n\nПерейди по ссылке — там твой текст на чёрном фоне!", mainKb(uid));
     return;
   }
 
