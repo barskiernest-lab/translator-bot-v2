@@ -265,6 +265,65 @@ async function onMessage(msg) {
   const text = msg.text || "";
   const st = getState(uid);
 
+  // commands
+  if (text.startsWith("/") && !text.startsWith("/start")) {
+    let cmd = text.split(" ")[0].toLowerCase();
+    let arg = text.slice(text.indexOf(" ") + 1);
+    clearState(uid);
+    if (cmd === "/translate" || cmd === "/tr") {
+      const s = getData(uid);
+      const t = arg ? await translate(arg, s.src === "auto" ? "auto" : s.src, s.dst) : "Введи текст после команды";
+      const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
+      const dstL = LANGUAGES[s.dst] || s.dst;
+      return send(chatId, "🌐 " + srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
+    }
+    if (cmd === "/calc" || cmd === "/c") {
+      try {
+        const result = Function('"use strict"; return (' + arg + ')')();
+        return send(chatId, "🧮 *" + result + "*", mainKb(uid));
+      } catch (e) {
+        return send(chatId, "Формат: `/calc 2+2`", mainKb(uid));
+      }
+    }
+    if (cmd === "/random" || cmd === "/r") {
+      const parts = arg.split(/[\s,]+/).map(Number);
+      const min = Math.min(parts[0], parts[1]);
+      const max = Math.max(parts[0], parts[1]);
+      if (!min && !max) return send(chatId, "Формат: `/random 1 100`", mainKb(uid));
+      const result = Math.floor(Math.random() * (max - min + 1)) + min;
+      return send(chatId, "🎲 *" + result + "*", mainKb(uid));
+    }
+    if (cmd === "/password" || cmd === "/pass") {
+      const len = parseInt(arg) || 16;
+      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+      let pass = "";
+      for (let i = 0; i < len; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+      return send(chatId, "🔐 `" + pass + "`", mainKb(uid));
+    }
+    if (cmd === "/bmi") {
+      const parts = arg.split(/[\s,]+/).map(Number);
+      const kg = parts[0], cm = parts[1];
+      if (!kg || !cm) return send(chatId, "Формат: `/bmi 70 175`", mainKb(uid));
+      const m = cm / 100;
+      const bmi = kg / (m * m);
+      let category = bmi < 18.5 ? "⚠️ Недостаточный" : bmi < 25 ? "✅ Норма" : bmi < 30 ? "⚠️ Избыточный" : "🔴 Ожирение";
+      return send(chatId, "⚖️ BMI: *" + bmi.toFixed(1) + "*\n📊 " + category, mainKb(uid));
+    }
+    if (cmd === "/flip") {
+      return send(chatId, "🪞 *" + arg.split("").reverse().join("") + "*", mainKb(uid));
+    }
+    if (cmd === "/myid" || cmd === "/id") {
+      const u = msg.from;
+      return send(chatId,
+        "🆔 *Твои данные:*\n\n" +
+        "👤 Имя: " + (u.first_name || "—") + "\n" +
+        "🔗 Username: " + (u.username ? "@" + u.username : "—") + "\n" +
+        "🆔 User ID: `" + u.id + "`\n" +
+        "💬 Язык: " + (u.language_code || "—"), mainKb(uid));
+    }
+    return send(chatId, "Команда не найдена. Отправь /start", mainKb(uid));
+  }
+
   // translate forwarded
   if ((msg.forward_from || msg.forward_sender_name) && text && !text.startsWith("/")) {
     clearState(uid);
@@ -462,6 +521,24 @@ async function onMessage(msg) {
 module.exports = async function (req, res) {
   const body = req.body || {};
   try {
+    // set commands menu once
+    if (body.message && body.message.from && body.message.from.id === 0) {}
+    if (body.message && body.message.text === "/start" && body.message.from) {
+      try {
+        await tg("setMyCommands", {
+          commands: [
+            { command: "start", description: "Главное меню" },
+            { command: "translate", description: "Перевести текст" },
+            { command: "calc", description: "Калькулятор" },
+            { command: "random", description: "Случайное число" },
+            { command: "password", description: "Генератор пароля" },
+            { command: "bmi", description: "Индекс массы" },
+            { command: "flip", description: "Переворот текста" },
+            { command: "myid", description: "Мои данные" }
+          ]
+        });
+      } catch (e) {}
+    }
     if (body.message) await onMessage(body.message);
     if (body.callback_query) await onCallback(body.callback_query);
   } catch (e) {
