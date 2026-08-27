@@ -91,7 +91,9 @@ function mainKb(uid) {
     [{ text: "📏 Конвертер", callback_data: "util_convert" },
      { text: "🕐 Часы", callback_data: "util_time" }],
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
-     { text: "🖤 Стиль-страница", callback_data: "util_page" }]
+     { text: "🖤 Стиль-страница", callback_data: "util_page" }],
+    [{ text: "⚖️ BMI", callback_data: "util_bmi" },
+     { text: "🆔 Мои данные", callback_data: "util_myid" }]
   ]};
 }
 
@@ -216,6 +218,22 @@ async function onCallback(cb) {
     setState(uid, "wait_page");
     return edit(chatId, msgId, "🖤 Введи текст для стиль-страницы:\n\nОн будет на чёрном фоне.", backKb());
   }
+  if (data === "util_bmi") {
+    setState(uid, "wait_bmi");
+    return edit(chatId, msgId, "⚖️ Введи вес и рост:\n\nПример: `70 175` (кг и см)", backKb());
+  }
+  if (data === "util_myid") {
+    const u = cb.from;
+    const txt =
+      "🆔 *Твои данные:*\n\n" +
+      "👤 Имя: " + (u.first_name || "—") + "\n" +
+      "🧑 Фамилия: " + (u.last_name || "—") + "\n" +
+      "🔗 Username: " + (u.username ? "@" + u.username : "—") + "\n" +
+      "🆔 User ID: `" + u.id + "`\n" +
+      "💬 Язык: " + (u.language_code || "—") +
+      "\n\nСкинь друзьям!";
+    return edit(chatId, msgId, txt, backKb());
+  }
   if (data.startsWith("tz_")) {
     const city = data.replace("tz_", "");
     const tz = TZ_CITIES[city];
@@ -335,6 +353,30 @@ async function onMessage(msg) {
     const url = "https://translator-bot-v2-six.vercel.app/api/page?id=" + encodeURIComponent(pageId);
     await send(chatId, "🖤 *Стиль-страница готова!*\n\n📄 *Текст:*\n" + text.substring(0, 200) + "\n\n🔗 *Ссылка:*\n" + url + "\n\nПерейди по ссылке — там твой текст на чёрном фоне!", mainKb(uid));
     return;
+  }
+
+  // BMI
+  if (st === "wait_bmi") {
+    clearState(uid);
+    const parts = text.replace(",", ".").split(/[\s,]+/).map(Number);
+    const kg = parts[0];
+    const cm = parts[1];
+    if (!kg || !cm || kg < 20 || kg > 300 || cm < 50 || cm > 250) {
+      return send(chatId, "Формат: `70 175` (вес в кг, рост в см)", mainKb(uid));
+    }
+    const m = cm / 100;
+    const bmi = kg / (m * m);
+    let category;
+    if (bmi < 18.5) category = "⚠️ Недостаточный вес";
+    else if (bmi < 25) category = "✅ Норма";
+    else if (bmi < 30) category = "⚠️ Избыточный вес";
+    else category = "🔴 Ожирение";
+    return send(chatId,
+      "⚖️ *Результат BMI*\n\n" +
+      "📏 Вес: " + kg + " кг\n" +
+      "📐 Рост: " + cm + " см\n\n" +
+      "🧮 **BMI: " + bmi.toFixed(1) + "**\n" +
+      "📊 " + category, mainKb(uid));
   }
 
   // converter length
