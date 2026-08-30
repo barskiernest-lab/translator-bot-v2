@@ -116,6 +116,72 @@ async function showRates(chatId, msgId) {
   return edit(chatId, msgId, txt, kb);
 }
 
+// ─── WEATHER ───
+async function getWeather(city) {
+  try {
+    const url = "https://wttr.in/" + encodeURIComponent(city) + "?format=j1&lang=ru";
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error("fail");
+    const data = await res.json();
+    const cur = data.current_condition && data.current_condition[0];
+    const area = data.nearest_area && data.nearest_area[0];
+    if (!cur) return null;
+    const today = data.weather && data.weather[0];
+    let forecast = null;
+    if (data.weather) {
+      forecast = data.weather.map(function(w) {
+        const d = new Date(w.date);
+        const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][d.getDay()];
+        let cond = "—";
+        if (w.hourly) { const h = w.hourly.find(function(x){ return x.weatherDesc; }); if (h && h.weatherDesc && h.weatherDesc[0]) cond = h.weatherDesc[0].value; }
+        return { day: wd, cond: cond, tmin: w.mintempC, tmax: w.maxtempC };
+      });
+    }
+    return {
+      city: area && area.areaName && area.areaName[0] ? area.areaName[0].value : city,
+      temp: Math.round(cur.temp_C),
+      feels: Math.round(cur.FeelsLikeC),
+      cond: cur.lang_ru && cur.lang_ru[0] ? cur.lang_ru[0].value : (cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : "—"),
+      humidity: cur.humidity,
+      wind: cur.windspeedKmph,
+      forecast: forecast ? forecast.slice(0, 4) : null
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ─── HOLIDAYS ───
+const HOLIDAYS = {
+  "01-01": ["Новый год", "День ели"],
+  "01-07": ["Рождество Христово"],
+  "02-14": ["День Святого Валентина", "День всех влюблённых"],
+  "02-23": ["День защитника Отечества"],
+  "03-08": ["Международный женский день"],
+  "03-21": ["Наурыз (Новый год по восточному календарю)"],
+  "04-01": ["День смеха"],
+  "05-01": ["Праздник весны и труда"],
+  "05-09": ["День Победы"],
+  "06-01": ["День защиты детей"],
+  "06-12": ["День России"],
+  "09-01": ["День знаний"],
+  "10-05": ["День учителя"],
+  "10-31": ["Хэллоуин"],
+  "11-04": ["День народного единства"],
+  "12-25": ["Рождество (католическое)"],
+  "12-31": ["Канун Нового года"],
+  "03-22": ["Всемирный день воды"],
+  "03-20": ["День Земли"],
+  "04-22": ["Международный день Земли"],
+  "02-19": ["Всемирный день китов"]
+};
+
+async function getHolidays(dd, mm) {
+  const key = String(dd).padStart(2, "0") + "-" + String(mm).padStart(2, "0");
+  const base = HOLIDAYS[key] || [];
+  return base;
+}
+
 // ─── KEYBOARDS ───
 function mainKb(uid) {
   const s = getData(uid);
@@ -134,6 +200,8 @@ function mainKb(uid) {
      { text: "💱 Курс валют", callback_data: "util_rates" }],
     [{ text: "🕐 Часы", callback_data: "util_time" },
      { text: "📱 Проверка номера", callback_data: "util_number" }],
+    [{ text: "🌤 Погода", callback_data: "util_weather" },
+     { text: "📅 Праздники дня", callback_data: "util_holidays" }],
     [{ text: "🔲 QR-код", callback_data: "util_qr" },
      { text: "🖤 Стиль-страница", callback_data: "util_page" }],
     [{ text: "⚖️ BMI", callback_data: "util_bmi" },
@@ -253,6 +321,14 @@ async function onCallback(cb) {
   if (data === "util_number") {
     setState(uid, "wait_number");
     return edit(chatId, msgId, "📱 Введи номер телефона в международном формате:\n\nПример: `+79261234567` или `77051234567`", backKb());
+  }
+  if (data === "util_weather") {
+    setState(uid, "wait_weather");
+    return edit(chatId, msgId, "🌤 Введи название города:\n\nПример: `Москва`, `Алматы` или `New York`", backKb());
+  }
+  if (data === "util_holidays") {
+    setState(uid, "wait_holidays");
+    return edit(chatId, msgId, "📅 Введи дату в формате `ДД.ММ` или просто отправь `.` для сегодняшнего дня:", backKb());
   }
   if (data === "util_time") {
     const kb = { inline_keyboard: [] };
@@ -624,6 +700,51 @@ async function onMessage(msg) {
     else remaining = mins + " мин";
     const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][target.getDay()];
     return send(chatId, "⏰ *До даты:* " + dateStr + " (" + wd + ")\n\n⏳ Осталось: *" + remaining + "*", mainKb(uid));
+  }
+
+  // weather
+  if (st === "wait_weather") {
+    clearState(uid);
+    const city = text.trim();
+    if (!city) return send(chatId, "Введи название города", mainKb(uid));
+    const today = await getWeather(city);
+    if (!today) return send(chatId, "Город не найден или сервис недоступен. Попробуй снова.", mainKb(uid));
+    let txt = "🌤 *" + today.city + "*\n\n";
+    txt += "🌡 Температура: *" + today.temp + "°C* (ощущается " + today.feels + "°C)\n";
+    txt += "☁️ " + today.cond + "\n";
+    txt += "💧 Влажность: " + today.humidity + "%\n";
+    txt += "💨 Ветер: " + today.wind + " м/с\n";
+    if (today.forecast) {
+      txt += "\n📅 *Прогноз:*\n";
+      today.forecast.forEach(function(f) {
+        txt += f.day + ": " + f.cond + ", " + f.tmin + "° — " + f.tmax + "°\n";
+      });
+    }
+    return send(chatId, txt, mainKb(uid));
+  }
+
+  // holidays
+  if (st === "wait_holidays") {
+    clearState(uid);
+    let dd, mm;
+    if (text === ".") {
+      const now = new Date();
+      dd = now.getDate(); mm = now.getMonth() + 1;
+    } else {
+      const m = text.match(/(\d{1,2})[.\/](\d{1,2})/);
+      if (!m) return send(chatId, "Формат: `08.03` или отправь `.` для сегодня", mainKb(uid));
+      dd = parseInt(m[1]); mm = parseInt(m[2]);
+      if (dd < 1 || dd > 31 || mm < 1 || mm > 12) return send(chatId, "Некорректная дата", mainKb(uid));
+    }
+    const padded = String(dd).padStart(2, "0") + "-" + String(mm).padStart(2, "0");
+    const hol = await getHolidays(dd, mm);
+    let txt = "📅 *Праздники " + String(dd).padStart(2, "0") + "." + String(mm).padStart(2, "0") + "*\n\n";
+    if (hol && hol.length) {
+      hol.forEach(function(h) { txt += "🎉 " + h + "\n"; });
+    } else {
+      txt += "В этот день праздников не найдено 😔";
+    }
+    return send(chatId, txt, mainKb(uid));
   }
 }
 
