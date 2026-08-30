@@ -138,7 +138,7 @@ async function getWeather(city) {
       });
     }
     return {
-      city: area && area.areaName && area.areaName[0] ? area.areaName[0].value : city,
+      city: city,
       temp: Math.round(cur.temp_C),
       feels: Math.round(cur.FeelsLikeC),
       cond: cur.lang_ru && cur.lang_ru[0] ? cur.lang_ru[0].value : (cur.weatherDesc && cur.weatherDesc[0] ? cur.weatherDesc[0].value : "—"),
@@ -182,6 +182,54 @@ async function getHolidays(dd, mm) {
   return base;
 }
 
+// ─── WEATHER REGIONS ───
+const WEATHER_MAP = {
+  "Россия": {
+    "Московская обл.": ["Москва", "Подольск", "Химки"],
+    "Санкт-Петербург": ["Санкт-Петербург", "Пушкин", "Петрозаводск"],
+    "Татарстан": ["Казань", "Набережные Челны", "Альметьевск"],
+    "Свердловская обл.": ["Екатеринбург", "Нижний Тагил", "Каменск-Уральский"],
+    "Новосибирская обл.": ["Новосибирск", "Бердск", "Искитим"],
+    "Нижегородская обл.": ["Нижний Новгород", "Арзамас", "Дзержинск"],
+    "Краснодарский край": ["Краснодар", "Сочи", "Новороссийск"],
+    "Ростовская обл.": ["Ростов-на-Дону", "Таганрог", "Шахты"],
+    "Челябинская обл.": ["Челябинск", "Магнитогорск", "Златоуст"],
+    "Самарская обл.": ["Самара", "Тольятти", "Сызрань"],
+    "Пермский край": ["Пермь", "Березники", "Соликамск"]
+  },
+  "Казахстан": {
+    "г. Алматы": ["Алматы"],
+    "г. Астана": ["Астана"],
+    "г. Шымкент": ["Шымкент"],
+    "Карагандинская": ["Караганда", "Темиртау", "Балхаш"],
+    "Актюбинская": ["Актобе"],
+    "Павлодарская": ["Павлодар", "Экибастуз"]
+  },
+  "Украина": {
+    "г. Киев": ["Киев"],
+    "Харьковская": ["Харьков"],
+    "Одесская": ["Одесса"],
+    "Днепропетровская": ["Днепр", "Кривой Рог"],
+    "Львовская": ["Львов"]
+  },
+  "Беларусь": {
+    "г. Минск": ["Минск"],
+    "Гомельская": ["Гомель"],
+    "Брестская": ["Брест"],
+    "Витебская": ["Витебск"]
+  },
+  "Германия": { "Регионы": ["Берлин", "Мюнхен", "Гамбург", "Франкфурт"] },
+  "Франция": { "Регионы": ["Париж", "Ницца", "Лион"] },
+  "Италия": { "Регионы": ["Рим", "Милан", "Венеция"] },
+  "Испания": { "Регионы": ["Мадрид", "Барселона", "Валенсия"] },
+  "Турция": { "Регионы": ["Стамбул", "Анталья", "Анкара"] },
+  "Великобритания": { "Регионы": ["Лондон", "Манчестер", "Ливерпуль"] },
+  "США": { "Регионы": ["Нью-Йорк", "Лос-Анджелес", "Майами", "Чикаго"] },
+  "Китай": { "Регионы": ["Пекин", "Шанхай", "Гуанчжоу"] },
+  "Япония": { "Регионы": ["Токио", "Осака"] },
+  "ОАЭ": { "Регионы": ["Дубай", "Абу-Даби"] }
+};
+
 // ─── KEYBOARDS ───
 function mainKb(uid) {
   const s = getData(uid);
@@ -223,6 +271,67 @@ function langKb(isSrc) {
 }
 
 function backKb() { return { inline_keyboard: [[{ text: "Назад", callback_data: "back_main" }]] }; }
+
+function weatherCountryKb() {
+  const kb = { inline_keyboard: [] };
+  const countries = Object.keys(WEATHER_MAP);
+  let row = [];
+  for (let i = 0; i < countries.length; i++) {
+    row.push({ text: countries[i], callback_data: "wc_" + encodeURIComponent(countries[i]) });
+    if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
+  }
+  if (row.length) kb.inline_keyboard.push(row);
+  kb.inline_keyboard.push([{ text: "Назад", callback_data: "back_main" }]);
+  return kb;
+}
+
+function weatherRegionKb(country) {
+  const kb = { inline_keyboard: [] };
+  const regions = Object.keys(WEATHER_MAP[country] || {});
+  let row = [];
+  for (let i = 0; i < regions.length; i++) {
+    const val = encodeURIComponent(country) + "::" + encodeURIComponent(regions[i]);
+    row.push({ text: regions[i], callback_data: "wr_" + val });
+    if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
+  }
+  if (row.length) kb.inline_keyboard.push(row);
+  kb.inline_keyboard.push([{ text: "← Страна", callback_data: "weat_back_country" }, { text: "Назад", callback_data: "back_main" }]);
+  return kb;
+}
+
+function weatherCityKb(country, region) {
+  const kb = { inline_keyboard: [] };
+  const cities = WEATHER_MAP[country] && WEATHER_MAP[country][region] || [];
+  let row = [];
+  for (let i = 0; i < cities.length; i++) {
+    row.push({ text: cities[i], callback_data: "wt_" + encodeURIComponent(cities[i]) });
+    if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
+  }
+  if (row.length) kb.inline_keyboard.push(row);
+  kb.inline_keyboard.push([{ text: "← Регион", callback_data: "wc_" + encodeURIComponent(country) }, { text: "Назад", callback_data: "back_main" }]);
+  return kb;
+}
+
+async function weatherResult(chatId, msgId, city) {
+  const today = await getWeather(city);
+  if (!today) {
+    const kb = { inline_keyboard: [[{ text: "← К городам", callback_data: "weat_back_country" }, { text: "Назад", callback_data: "back_main" }]] };
+    return edit(chatId, msgId, "Город не найден или сервис недоступен.", kb);
+  }
+  let txt = "🌤 *" + today.city + "*\n\n";
+  txt += "🌡 Температура: *" + today.temp + "°C* (ощущается " + today.feels + "°C)\n";
+  txt += "☁️ " + today.cond + "\n";
+  txt += "💧 Влажность: " + today.humidity + "%\n";
+  txt += "💨 Ветер: " + today.wind + " м/с\n";
+  if (today.forecast) {
+    txt += "\n📅 *Прогноз:*\n";
+    today.forecast.forEach(function(f) {
+      txt += f.day + ": " + f.cond + ", " + f.tmin + "° — " + f.tmax + "°\n";
+    });
+  }
+  const kb = { inline_keyboard: [[{ text: "← К городам", callback_data: "weat_back_country" }, { text: "Назад", callback_data: "back_main" }]] };
+  return edit(chatId, msgId, txt, kb);
+}
 
 function mainText(uid) {
   const s = getData(uid);
@@ -323,8 +432,28 @@ async function onCallback(cb) {
     return edit(chatId, msgId, "📱 Введи номер телефона в международном формате:\n\nПример: `+79261234567` или `77051234567`", backKb());
   }
   if (data === "util_weather") {
-    setState(uid, "wait_weather");
-    return edit(chatId, msgId, "🌤 Введи название города:\n\nПример: `Москва`, `Алматы` или `New York`", backKb());
+    clearState(uid);
+    return edit(chatId, msgId, "🌤 *Погода*\n\nВыбери страну:", weatherCountryKb());
+  }
+  if (data.startsWith("wc_")) {
+    const country = decodeURIComponent(data.slice(3));
+    return edit(chatId, msgId, "🌤 *" + country + "*\n\nВыбери регион:", weatherRegionKb(country));
+  }
+  if (data.startsWith("wr_")) {
+    const raw = decodeURIComponent(data.slice(3));
+    const i = raw.indexOf("::");
+    const country = raw.slice(0, i);
+    const region = raw.slice(i + 2);
+    return edit(chatId, msgId, "🌤 *" + region + "*\n\nВыбери город:", weatherCityKb(country, region));
+  }
+  if (data.startsWith("wt_")) {
+    const city = decodeURIComponent(data.slice(3));
+    clearState(uid);
+    return weatherResult(chatId, msgId, city);
+  }
+  if (data === "weat_back_country") {
+    clearState(uid);
+    return edit(chatId, msgId, "🌤 *Погода*\n\nВыбери страну:", weatherCountryKb());
   }
   if (data === "util_holidays") {
     setState(uid, "wait_holidays");
@@ -700,27 +829,6 @@ async function onMessage(msg) {
     else remaining = mins + " мин";
     const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][target.getDay()];
     return send(chatId, "⏰ *До даты:* " + dateStr + " (" + wd + ")\n\n⏳ Осталось: *" + remaining + "*", mainKb(uid));
-  }
-
-  // weather
-  if (st === "wait_weather") {
-    clearState(uid);
-    const city = text.trim();
-    if (!city) return send(chatId, "Введи название города", mainKb(uid));
-    const today = await getWeather(city);
-    if (!today) return send(chatId, "Город не найден или сервис недоступен. Попробуй снова.", mainKb(uid));
-    let txt = "🌤 *" + today.city + "*\n\n";
-    txt += "🌡 Температура: *" + today.temp + "°C* (ощущается " + today.feels + "°C)\n";
-    txt += "☁️ " + today.cond + "\n";
-    txt += "💧 Влажность: " + today.humidity + "%\n";
-    txt += "💨 Ветер: " + today.wind + " м/с\n";
-    if (today.forecast) {
-      txt += "\n📅 *Прогноз:*\n";
-      today.forecast.forEach(function(f) {
-        txt += f.day + ": " + f.cond + ", " + f.tmin + "° — " + f.tmax + "°\n";
-      });
-    }
-    return send(chatId, txt, mainKb(uid));
   }
 
   // holidays
