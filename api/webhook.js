@@ -277,7 +277,7 @@ function weatherCountryKb() {
   const countries = Object.keys(WEATHER_MAP);
   let row = [];
   for (let i = 0; i < countries.length; i++) {
-    row.push({ text: countries[i], callback_data: "wc_" + encodeURIComponent(countries[i]) });
+    row.push({ text: countries[i], callback_data: "wc" + i });
     if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
   }
   if (row.length) kb.inline_keyboard.push(row);
@@ -285,13 +285,13 @@ function weatherCountryKb() {
   return kb;
 }
 
-function weatherRegionKb(country) {
+function weatherRegionKb(countryIdx) {
   const kb = { inline_keyboard: [] };
+  const country = Object.keys(WEATHER_MAP)[countryIdx] || "";
   const regions = Object.keys(WEATHER_MAP[country] || {});
   let row = [];
   for (let i = 0; i < regions.length; i++) {
-    const val = encodeURIComponent(country) + "::" + encodeURIComponent(regions[i]);
-    row.push({ text: regions[i], callback_data: "wr_" + val });
+    row.push({ text: regions[i], callback_data: "wr" + countryIdx + "_" + i });
     if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
   }
   if (row.length) kb.inline_keyboard.push(row);
@@ -299,17 +299,26 @@ function weatherRegionKb(country) {
   return kb;
 }
 
-function weatherCityKb(country, region) {
+function weatherCityKb(countryIdx, regionIdx) {
   const kb = { inline_keyboard: [] };
-  const cities = WEATHER_MAP[country] && WEATHER_MAP[country][region] || [];
+  const country = Object.keys(WEATHER_MAP)[countryIdx] || "";
+  const region = Object.keys(WEATHER_MAP[country] || {})[regionIdx] || "";
+  const cities = (WEATHER_MAP[country] && WEATHER_MAP[country][region]) || [];
   let row = [];
   for (let i = 0; i < cities.length; i++) {
-    row.push({ text: cities[i], callback_data: "wt_" + encodeURIComponent(cities[i]) });
+    row.push({ text: cities[i], callback_data: "wt" + i + "_" + countryIdx + "_" + regionIdx });
     if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
   }
   if (row.length) kb.inline_keyboard.push(row);
-  kb.inline_keyboard.push([{ text: "← Регион", callback_data: "wc_" + encodeURIComponent(country) }, { text: "Назад", callback_data: "back_main" }]);
+  kb.inline_keyboard.push([{ text: "← Регион", callback_data: "wc" + countryIdx }, { text: "Назад", callback_data: "back_main" }]);
   return kb;
+}
+
+function weatherCityName(countryIdx, regionIdx, cityIdx) {
+  const country = Object.keys(WEATHER_MAP)[countryIdx] || "";
+  const region = Object.keys(WEATHER_MAP[country] || {})[regionIdx] || "";
+  const cities = (WEATHER_MAP[country] && WEATHER_MAP[country][region]) || [];
+  return cities[cityIdx] || "";
 }
 
 async function weatherResult(chatId, msgId, city) {
@@ -435,19 +444,29 @@ async function onCallback(cb) {
     clearState(uid);
     return edit(chatId, msgId, "🌤 *Погода*\n\nВыбери страну:", weatherCountryKb());
   }
-  if (data.startsWith("wc_")) {
-    const country = decodeURIComponent(data.slice(3));
-    return edit(chatId, msgId, "🌤 *" + country + "*\n\nВыбери регион:", weatherRegionKb(country));
+  if (data.startsWith("wc")) {
+    const countryIdx = parseInt(data.slice(2), 10);
+    if (isNaN(countryIdx)) return;
+    const country = Object.keys(WEATHER_MAP)[countryIdx] || "";
+    return edit(chatId, msgId, "🌤 *" + country + "*\n\nВыбери регион:", weatherRegionKb(countryIdx));
   }
-  if (data.startsWith("wr_")) {
-    const raw = decodeURIComponent(data.slice(3));
-    const i = raw.indexOf("::");
-    const country = raw.slice(0, i);
-    const region = raw.slice(i + 2);
-    return edit(chatId, msgId, "🌤 *" + region + "*\n\nВыбери город:", weatherCityKb(country, region));
+  if (data.startsWith("wr")) {
+    const parts = data.slice(2).split("_");
+    const countryIdx = parseInt(parts[0], 10);
+    const regionIdx = parseInt(parts[1], 10);
+    if (isNaN(countryIdx) || isNaN(regionIdx)) return;
+    const country = Object.keys(WEATHER_MAP)[countryIdx] || "";
+    const region = Object.keys(WEATHER_MAP[country] || {})[regionIdx] || "";
+    return edit(chatId, msgId, "🌤 *" + region + "*\n\nВыбери город:", weatherCityKb(countryIdx, regionIdx));
   }
-  if (data.startsWith("wt_")) {
-    const city = decodeURIComponent(data.slice(3));
+  if (data.startsWith("wt")) {
+    const parts = data.slice(2).split("_");
+    const cityIdx = parseInt(parts[0], 10);
+    const countryIdx = parseInt(parts[1], 10);
+    const regionIdx = parseInt(parts[2], 10);
+    if (isNaN(cityIdx) || isNaN(countryIdx) || isNaN(regionIdx)) return;
+    const city = weatherCityName(countryIdx, regionIdx, cityIdx);
+    if (!city) return;
     clearState(uid);
     return weatherResult(chatId, msgId, city);
   }
