@@ -881,7 +881,13 @@ async function onMessage(msg) {
 // ─── HANDLER ───
 module.exports = async function (req, res) {
   const body = req.body || {};
+  const WH_SECRET = "tg-secret-p9k2n7x4";
   try {
+    const header = req.headers["x-telegram-bot-api-secret-token"];
+    if (header !== WH_SECRET) {
+      res.status(403).json({ ok: false, error: "unauthorized" });
+      return;
+    }
     if (body.message && body.message.text === "/start") {
       try {
         await tg("setMyCommands", {
