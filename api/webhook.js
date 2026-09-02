@@ -1,5 +1,19 @@
 const BOT_TOKEN = "8951253222:AAFzQy0a7hl-u9U1j2wkMeT2GZX6XRBDtcc";
 
+// Owner Telegram user id. First /start user auto-becomes owner when DB is empty.
+const OWNER_ID = 0; // <<< PUT YOUR TELEGRAM USER ID HERE (e.g. 123456789)
+const KV_BUCKET = "BPpAcxuWbicwUy9QFLZCXU"; // kvdb.io bucket (verified via barskiernest@gmail.com)
+const KV_URL = "https://kvdb.io/" + KV_BUCKET + "/db";
+
+const KEY_PLANS = {
+  "1h": { label: "1 час", ms: 3600000 },
+  "1d": { label: "1 день", ms: 86400000 },
+  "7d": { label: "7 дней", ms: 604800000 },
+  "30d": { label: "30 дней", ms: 2592000000 },
+  "1y": { label: "1 год", ms: 31536000000 },
+  "custom": { label: "Свой срок", ms: 0 }
+};
+
 const LANGUAGES = {
   ru: "Русский", en: "English", uk: "Українська",
   de: "Deutsch", fr: "Français", es: "Español",
@@ -55,6 +69,95 @@ async function answer(id, text, alert) {
   const p = { callback_query_id: id, text: text || "" };
   if (alert) p.show_alert = true;
   await tg("answerCallbackQuery", p);
+}
+
+// ─── STORAGE (kvdb.io) ───
+let db = null;
+let dbLoaded = false;
+
+async function loadDb() {
+  if (dbLoaded && db) return db;
+  try {
+    const res = await fetch(KV_URL, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const txt = await res.text();
+      if (txt && txt.trim().length) {
+        try { db = JSON.parse(txt); } catch (e) { db = null; }
+      }
+    }
+  } catch (e) {}
+  if (!db) db = { owner: OWNER_ID, keys: {}, users: {} };
+  dbLoaded = true;
+  return db;
+}
+
+async function saveDb() {
+  try {
+    await fetch(KV_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(db),
+      signal: AbortSignal.timeout(8000)
+    });
+  } catch (e) {}
+}
+
+function isOwner(uid) {
+  return db && db.owner === uid;
+}
+
+function genKeyCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let k = "";
+  for (let i = 0; i < 12; i++) {
+    if (i > 0 && i % 4 === 0) k += "-";
+    k += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return k;
+}
+
+function activeUntil(uid) {
+  const u = db && db.users && db.users[uid];
+  if (!u) return 0;
+  if (u.expires > Date.now()) return u.expires;
+  return 0;
+}
+
+// keys: { code: { plan, label, expires (ms), days, usedBy, usedAt, active } }
+function createKey(planKey, label, customDays) {
+  if (!db) return null;
+  const plan = KEY_PLANS[planKey];
+  if (!plan) return null;
+  let code = genKeyCode();
+  while (db.keys[code]) code = genKeyCode();
+  const now = Date.now();
+  let expires = 0;
+  if (planKey !== "custom") expires = now + plan.ms;
+  db.keys[code] = { plan: planKey, label: label || plan.label, expires: expires, days: customDays || 0, createdAt: now, usedBy: null, usedAt: null, active: true };
+  return code;
+}
+
+function createKey2(planKey, label, customDays) {
+  return createKey(planKey, label, customDays);
+}
+
+function activateKey(code, uid, username) {
+  if (!db) return { ok: false, reason: "err" };
+  const k = db.keys[code.toUpperCase()];
+  if (!k) return { ok: false, reason: "notfound" };
+  if (k.usedBy && k.usedBy !== uid) return { ok: false, reason: "used" };
+  const now = Date.now();
+  // custom keys: expires set on activation
+  if (k.plan === "custom") {
+    const days = k.days || 1;
+    k.expires = now + days * 86400000;
+  }
+  if (k.expires && k.expires < now) return { ok: false, reason: "expired" };
+  k.usedBy = uid;
+  k.usedAt = now;
+  k.username = username || "";
+  db.users[uid] = { expires: (k.expires || (now + 86400000)), plan: k.plan, label: k.label };
+  return { ok: true, until: db.users[uid].expires };
 }
 
 // ─── TRANSLATE ───
@@ -352,6 +455,29 @@ function mainText(uid) {
   return "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
 }
 
+function deniedText() {
+  return "🚫 *Доступ к боту ограничен*\n\nЧтобы получить доступ, напиши владельцу: @Xomka132";
+}
+
+function accessDeniedKb() {
+  return { inline_keyboard: [[
+    { text: "🔓 Я КУПИЛ", callback_data: "redeem_start" }
+  ]]};
+}
+
+function ownerKb() {
+  return { inline_keyboard: [
+    [{ text: "🔑 Создать ключ", callback_data: "adm_key" }],
+    [{ text: "📊 Статистика", callback_data: "adm_stats" }],
+    [{ text: "➖ Главное меню", callback_data: "back_main" }]
+  ]};
+}
+
+function fmtDate(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 // ─── CALLBACKS ───
 async function onCallback(cb) {
   if (!cb || !cb.message) return;
@@ -361,6 +487,67 @@ async function onCallback(cb) {
   const data = cb.data;
 
   answer(cb.id, "");
+
+  if (!dbLoaded) await loadDb();
+
+  // Redeem flow
+  if (data === "redeem_start") {
+    clearState(uid);
+    setState(uid, "wait_redeem");
+    return edit(chatId, msgId, "🔓 Введи твой код доступа.\n\nОн выглядит так: `ABCD-EFGH-JKLM`", backKb());
+  }
+
+  const allowed = isOwner(uid) || !!activeUntil(uid);
+  // Access gate: block utility callbacks for non-authorized users
+  if (!allowed) {
+    answer(cb.id, "Доступ ограничен. Напиши @Xomka132", true);
+    return;
+  }
+
+  // ─── ADMIN (owner only) ───
+  if (isOwner(uid)) {
+    if (data === "adm_key") {
+      const kb = { inline_keyboard: [] };
+      const plans = Object.keys(KEY_PLANS);
+      let row = [];
+      for (let i = 0; i < plans.length; i++) {
+        const lbl = plans[i] === "custom" ? "⚙️ Свой срок" : plans[i] + " · " + KEY_PLANS[plans[i]].label;
+        row.push({ text: KEY_PLANS[plans[i]].label, callback_data: "adm_plan_" + plans[i] });
+        if (row.length === 2) { kb.inline_keyboard.push(row); row = []; }
+      }
+      if (row.length) kb.inline_keyboard.push(row);
+      kb.inline_keyboard.push([{ text: "← Назад", callback_data: "adm_menu" }]);
+      return edit(chatId, msgId, "🔑 *Создать ключ*\n\nВыбери срок действия:", kb);
+    }
+    if (data.startsWith("adm_plan_")) {
+      const plan = data.replace("adm_plan_", "");
+      setState(uid, "adm_plan_" + plan);
+      if (plan === "custom") {
+        return edit(chatId, msgId, "⚙️ Введи срок в днях (целое число):", backKb());
+      }
+      const code = createKey(plan, KEY_PLANS[plan].label);
+      await saveDb();
+      const until = plan !== "custom" ? fmtDate(db.keys[code].expires) : "— (при активации)";
+      const kb = { inline_keyboard: [[{ text: "➕ Ещё один такой же", callback_data: "adm_plan_" + plan }], [{ text: "🔑 Новый (другой срок)", callback_data: "adm_key" }], [{ text: "← В меню", callback_data: "adm_menu" }]] };
+      return edit(chatId, msgId, "🔑 *Ключ создан!*\n\n`" + code + "`\n\n📅 Действует до: *" + until + "*\n\nОтправь этот код покупателю.", kb);
+    }
+    if (data === "adm_stats") {
+      const keys = Object.keys(db.keys);
+      const total = keys.length;
+      const used = keys.filter(function(k){ return db.keys[k].usedBy; }).length;
+      const users = Object.keys(db.users).length;
+      let txt = "📊 *Статистика*\n\n";
+      txt += "🔑 Создано ключей: *" + total + "*\n";
+      txt += "✅ Использовано: *" + used + "*\n";
+      txt += "👤 Пользователей: *" + users + "*\n";
+      const kb = { inline_keyboard: [[{ text: "← В меню", callback_data: "adm_menu" }]] };
+      return edit(chatId, msgId, txt, kb);
+    }
+    if (data === "adm_menu") {
+      clearState(uid);
+      return edit(chatId, msgId, "👑 *Панель владельца*\n\nЧто сделать?", ownerKb());
+    }
+  }
 
   // translator
   if (data === "tr_menu") {
@@ -565,19 +752,58 @@ async function onMessage(msg) {
   const text = msg.text || "";
   const st = getState(uid);
 
-  // translate forwarded
-  if ((msg.forward_from || msg.forward_sender_name) && text && !text.startsWith("/")) {
+  // ensure DB loaded exactly once per process
+  if (!dbLoaded) await loadDb();
+  if (!db.owner) { db.owner = uid; await saveDb(); }
+
+  // Redeem state: user sends a key code
+  if (st === "wait_redeem") {
     clearState(uid);
-    const s = getData(uid);
-    const t = await translate(text, s.src === "auto" ? "auto" : s.src, s.dst);
-    const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
-    const dstL = LANGUAGES[s.dst] || s.dst;
-    return send(chatId, "🌐 " + srcL + " -> " + dstL + "\n\n" + t, mainKb(uid));
+    const code = text.trim();
+    if (!code) return send(chatId, "Введи код доступа.", accessDeniedKb());
+    const r = activateKey(code, uid, msg.from.username || "");
+    if (!r.ok) {
+      let m = "❌ Код неверный или уже использован.";
+      if (r.reason === "notfound") m = "❌ Такого кода нет. Проверь написание.";
+      else if (r.reason === "used") m = "❌ Этот код уже использован другим пользователем.";
+      else if (r.reason === "expired") m = "❌ Этот код истёк.";
+      return send(chatId, m, accessDeniedKb());
+    }
+    await saveDb();
+    const until = new Date(r.until).toLocaleString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return send(chatId, "🔓 *Доступ открыт!*\n\nДействует до: " + until + "\n\nДобро пожаловать!", mainKb(uid));
+  }
+
+  // Admin: custom key duration input (owner)
+  if (st === "adm_plan_custom") {
+    clearState(uid);
+    if (!isOwner(uid)) return send(chatId, "Нет доступа.", accessDeniedKb());
+    const days = parseInt(text);
+    if (!days || days < 1 || days > 3650) return send(chatId, "Введи количество дней (1-3650):", backKb());
+    const code = createKey2("custom", "custom " + days + " дн", days);
+    await saveDb();
+    const until = fmtDate(db.keys[code].expires);
+    const kb = { inline_keyboard: [[{ text: "🔑 Новый ключ", callback_data: "adm_key" }], [{ text: "← В меню", callback_data: "adm_menu" }]] };
+    return send(chatId, "🔑 *Ключ создан (свой срок: " + days + " дн)!*\n\n`" + code + "`\n\nДействует с активации до: *" + until + "*\n\nОтправь этот код покупателю.", kb);
+  }
+
+  const allowed = isOwner(uid) || !!activeUntil(uid);
+
+  // Access gate for non-owner without active subscription
+  if (!allowed && text !== "/start" && text !== "/myid") {
+    return send(chatId, deniedText(), accessDeniedKb());
   }
 
   if (text === "/start") {
     clearState(uid);
-    return send(chatId, mainText(uid), mainKb(uid));
+    if (isOwner(uid)) {
+      return send(chatId, "👑 *Панель владельца*\n\nЧто сделать?", ownerKb());
+    }
+    if (activeUntil(uid)) {
+      return send(chatId, mainText(uid), mainKb(uid));
+    }
+    // not owner, no access -> /start also shows access (below)
+    return send(chatId, deniedText(), accessDeniedKb());
   }
 
   if (text === "/myid" || text.startsWith("/myid ")) {
