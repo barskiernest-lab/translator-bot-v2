@@ -315,7 +315,7 @@ function mainKb(uid) {
   const s = getData(uid);
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
-  return { inline_keyboard: [
+  const kb = { inline_keyboard: [
     [{ text: "🌐 Переводчик", callback_data: "tr_menu" }],
     [{ text: "📝 " + srcL, callback_data: "tr_src" }, { text: "🔄 " + dstL, callback_data: "tr_dst" }],
     [{ text: "💱 Поменять языки", callback_data: "tr_swap" }],
@@ -335,6 +335,11 @@ function mainKb(uid) {
     [{ text: "⚖️ BMI", callback_data: "util_bmi" },
      { text: "🪞 Переворот текста", callback_data: "util_flip" }]
   ]};
+  if (isOwner(uid)) {
+    kb.inline_keyboard.push([{ text: "──── Кнопки ────", callback_data: "noop" }]);
+    kb.inline_keyboard.push([{ text: "👑 Админ панель", callback_data: "adm_menu" }]);
+  }
+  return kb;
 }
 
 function langKb(isSrc) {
@@ -426,7 +431,12 @@ function mainText(uid) {
   const s = getData(uid);
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
   const dstL = LANGUAGES[s.dst] || s.dst;
-  return "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
+  let txt = "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
+  const until = activeUntil(uid);
+  if (until) {
+    txt += "\n\n⏳ *Подписка активна до:* " + fmtDate(until);
+  }
+  return txt;
 }
 
 function deniedText() {
@@ -764,13 +774,10 @@ async function onMessage(msg) {
 
   if (text === "/start") {
     clearState(uid);
-    if (isOwner(uid)) {
-      return send(chatId, "👑 *Панель владельца*\n\nЧто сделать?", ownerKb());
-    }
-    if (activeUntil(uid)) {
+    if (isOwner(uid) || activeUntil(uid)) {
       return send(chatId, mainText(uid), mainKb(uid));
     }
-    // not owner, no access -> /start also shows access (below)
+    // no access -> /start shows access
     return send(chatId, deniedText(), accessDeniedKb());
   }
 
