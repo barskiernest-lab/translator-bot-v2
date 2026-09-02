@@ -1073,9 +1073,21 @@ async function onMessage(msg) {
 }
 
 // ─── HANDLER ───
+const WH_SECRET = "tg-secret-p9k2n7x4";
+const WH_URL = "https://translator-bot-v2-six.vercel.app/api/webhook";
+
+async function ensureWebhook() {
+  try {
+    const info = await (await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/getWebhookInfo", { signal: AbortSignal.timeout(8000) })).json();
+    const u = info && info.result && info.result.url;
+    if (u !== WH_URL) {
+      await fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/setWebhook?url=" + encodeURIComponent(WH_URL) + "&secret_token=" + WH_SECRET, { signal: AbortSignal.timeout(8000) });
+    }
+  } catch (e) {}
+}
+
 module.exports = async function (req, res) {
   const body = req.body || {};
-  const WH_SECRET = "tg-secret-p9k2n7x4";
   try {
     const header = req.headers["x-telegram-bot-api-secret-token"];
     if (header !== WH_SECRET) {
@@ -1091,6 +1103,8 @@ module.exports = async function (req, res) {
           ]
         });
       } catch (e) {}
+      // self-heal the webhook so it can't stay broken after a redeploy
+      ensureWebhook();
     }
     if (body.message) await onMessage(body.message);
     if (body.callback_query) await onCallback(body.callback_query);
