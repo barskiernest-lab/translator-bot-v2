@@ -2,8 +2,7 @@ const BOT_TOKEN = "8951253222:AAFzQy0a7hl-u9U1j2wkMeT2GZX6XRBDtcc";
 
 // Owner Telegram user id
 const OWNER_ID = 6476497036;
-const KV_BUCKET = "BPpAcxuWbicwUy9QFLZCXU"; // kvdb.io bucket (verified via barskiernest@gmail.com)
-const KV_URL = "https://kvdb.io/" + KV_BUCKET + "/db";
+
 
 const KEY_PLANS = {
   "1h": { label: "1 час", ms: 3600000 },
@@ -71,37 +70,11 @@ async function answer(id, text, alert) {
   await tg("answerCallbackQuery", p);
 }
 
-// ─── STORAGE (kvdb.io) ───
-let db = null;
-let dbLoaded = false;
+// ─── STORAGE (in-memory) ───
+const db = { owner: OWNER_ID, keys: {}, users: {} };
 
-async function loadDb() {
-  if (dbLoaded && db) return db;
-  try {
-    const res = await fetch(KV_URL, { signal: AbortSignal.timeout(8000) });
-    if (res.ok) {
-      const txt = await res.text();
-      if (txt && txt.trim().length) {
-        try { db = JSON.parse(txt); } catch (e) { db = null; }
-      }
-    }
-  } catch (e) {}
-  if (!db) db = { owner: OWNER_ID, keys: {}, users: {} };
-  db.owner = OWNER_ID; // owner is always this hardcoded id
-  dbLoaded = true;
-  return db;
-}
-
-async function saveDb() {
-  try {
-    await fetch(KV_URL, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(db),
-      signal: AbortSignal.timeout(8000)
-    });
-  } catch (e) {}
-}
+function loadDb() { return db; }
+async function saveDb() { return; }
 
 function isOwner(uid) {
   return OWNER_ID === uid;
@@ -489,8 +462,6 @@ async function onCallback(cb) {
 
   answer(cb.id, "");
 
-  if (!dbLoaded) await loadDb();
-
   // Redeem flow
   if (data === "redeem_start") {
     clearState(uid);
@@ -752,9 +723,6 @@ async function onMessage(msg) {
   const uid = msg.from.id;
   const text = msg.text || "";
   const st = getState(uid);
-
-  // ensure DB loaded exactly once per process
-  if (!dbLoaded) await loadDb();
 
   // Redeem state: user sends a key code
   if (st === "wait_redeem") {
