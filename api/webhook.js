@@ -427,6 +427,18 @@ async function weatherResult(chatId, msgId, city) {
   return edit(chatId, msgId, txt, kb);
 }
 
+function fmtRemaining(ms) {
+  if (!ms || ms <= 0) return "—";
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  let part = [];
+  if (d > 0) part.push(d + " дн");
+  if (h > 0) part.push(h + " ч");
+  part.push(m + " мин");
+  return part.join(", ");
+}
+
 function mainText(uid) {
   const s = getData(uid);
   const srcL = s.src === "auto" ? "Авто" : (LANGUAGES[s.src] || s.src);
@@ -434,7 +446,7 @@ function mainText(uid) {
   let txt = "Telegram Utils\n\n🌐 Переводчик: " + srcL + " -> " + dstL + "\n\nОтправь текст для перевода или выбери утилиту:";
   const until = activeUntil(uid);
   if (until) {
-    txt += "\n\n⏳ *Подписка активна до:* " + fmtDate(until);
+    txt += "\n\n⏳ *Осталось:* " + fmtRemaining(until - Date.now());
   }
   return txt;
 }
@@ -459,7 +471,7 @@ function ownerKb() {
 
 function fmtDate(ts) {
   if (!ts) return "—";
-  return new Date(ts).toLocaleString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(ts).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 // ─── CALLBACKS ───
@@ -748,8 +760,8 @@ async function onMessage(msg) {
       return send(chatId, m, accessDeniedKb());
     }
     await saveDb();
-    const until = new Date(r.until).toLocaleString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
-    return send(chatId, "🔓 *Доступ открыт!*\n\nДействует до: " + until + "\n\nДобро пожаловать!", mainKb(uid));
+    const rem = fmtRemaining(r.until - Date.now());
+    return send(chatId, "🔓 *Доступ открыт!*\n\n⏳ Осталось: *" + rem + "*\n\nДобро пожаловать!", mainKb(uid));
   }
 
   // Admin: custom key duration input (owner)
