@@ -1,7 +1,7 @@
 const BOT_TOKEN = "8951253222:AAFzQy0a7hl-u9U1j2wkMeT2GZX6XRBDtcc";
 
-// Owner Telegram user id. First /start user auto-becomes owner when DB is empty.
-const OWNER_ID = 0; // <<< PUT YOUR TELEGRAM USER ID HERE (e.g. 123456789)
+// Owner Telegram user id
+const OWNER_ID = 6476497036;
 const KV_BUCKET = "BPpAcxuWbicwUy9QFLZCXU"; // kvdb.io bucket (verified via barskiernest@gmail.com)
 const KV_URL = "https://kvdb.io/" + KV_BUCKET + "/db";
 
@@ -87,6 +87,7 @@ async function loadDb() {
     }
   } catch (e) {}
   if (!db) db = { owner: OWNER_ID, keys: {}, users: {} };
+  db.owner = OWNER_ID; // owner is always this hardcoded id
   dbLoaded = true;
   return db;
 }
@@ -103,7 +104,7 @@ async function saveDb() {
 }
 
 function isOwner(uid) {
-  return db && db.owner === uid;
+  return OWNER_ID === uid;
 }
 
 function genKeyCode() {
@@ -754,7 +755,6 @@ async function onMessage(msg) {
 
   // ensure DB loaded exactly once per process
   if (!dbLoaded) await loadDb();
-  if (!db.owner) { db.owner = uid; await saveDb(); }
 
   // Redeem state: user sends a key code
   if (st === "wait_redeem") {
