@@ -1,4 +1,4 @@
-const BOT_TOKEN = "8951253222:AAGCU2xIaSKiRdDeB2SlHcQRdAuKyDV251k";
+const BOT_TOKEN = process.env.BOT_TOKEN || "";
 
 // Owner Telegram user id
 const OWNER_ID = 6476497036;
