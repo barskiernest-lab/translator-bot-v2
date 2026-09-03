@@ -1,0 +1,24 @@
+name: Guard Webhook
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check webhook and re-set if empty
+        run: |
+          info=$(curl -s "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/getWebhookInfo")
+          url=$(echo "$info" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'].get('url',''))")
+          echo "Current webhook url: '$url'"
+          if [ -z "$url" ]; then
+            echo "Webhook is empty - re-setting..."
+            curl -s -G "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/setWebhook" \
+              --data-urlencode "url=https://translator-bot-v2-six.vercel.app/api/webhook" \
+              --data-urlencode "secret_token=tg-secret-p9k2n7x4"
+          else
+            echo "Webhook is OK - no action needed."
+          fi
