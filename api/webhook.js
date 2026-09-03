@@ -2,6 +2,8 @@ const BOT_TOKEN = "8951253222:AAFzQy0a7hl-u9U1j2wkMeT2GZX6XRBDtcc";
 
 // Owner Telegram user id
 const OWNER_ID = 6476497036;
+// Access system: owner always has access; others need an active key
+const ACCESS_ENABLED = true;
 
 
 const KEY_PLANS = {
@@ -491,7 +493,7 @@ async function onCallback(cb) {
     return edit(chatId, msgId, "🔓 Введи твой код доступа.\n\nОн выглядит так: `ABCD-EFGH-JKLM`", backKb());
   }
 
-  const allowed = isOwner(uid) || !!activeUntil(uid);
+  const allowed = isOwner(uid) || (ACCESS_ENABLED && !!activeUntil(uid));
   // Access gate: block utility callbacks for non-authorized users
   if (!allowed) {
     answer(cb.id, "Доступ ограничен. Напиши @Xomka132", true);
@@ -777,7 +779,7 @@ async function onMessage(msg) {
     return send(chatId, "🔑 *Ключ создан (свой срок: " + days + " дн)!*\n\n`" + code + "`\n\nДействует с активации до: *" + until + "*\n\nОтправь этот код покупателю.", kb);
   }
 
-  const allowed = isOwner(uid) || !!activeUntil(uid);
+  const allowed = isOwner(uid) || (ACCESS_ENABLED && !!activeUntil(uid));
 
   // Access gate for non-owner without active subscription
   if (!allowed && text !== "/start" && text !== "/myid") {
