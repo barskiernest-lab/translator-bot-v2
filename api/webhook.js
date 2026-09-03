@@ -118,7 +118,10 @@ let _willSave = null;
 async function saveDb() {
   try {
     const gh = process.env.GH_TOKEN;
-    if (!gh) return;
+    if (!gh) {
+      try { await tg("sendMessage", { chat_id: OWNER_ID, text: "⚠️ saveDb: GH_TOKEN пуст" }); } catch (e) {}
+      return;
+    }
     // throttle heavy writes: at most once every 5 seconds, coalescing pending ones
     const now = Date.now();
     if (now - _lastSave < 5000) {
@@ -133,9 +136,16 @@ async function saveDb() {
     const body = JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(db) } } });
     const res = await gistFetch("https://api.github.com/gists/" + GIST_ID, { method: "PATCH", body: body });
     _saveBusy = false;
-    if (!res.ok) console.error("saveDb failed", res.status);
+    if (!res.ok) {
+      let txt = "❌ saveDb HTTP " + res.status;
+      try { const j = await res.json(); txt += ": " + (j && j.message ? j.message : ""); } catch (e) {}
+      try { await tg("sendMessage", { chat_id: OWNER_ID, text: txt }); } catch (e) {}
+      console.error("saveDb failed", res.status);
+    }
   } catch (e) {
     _saveBusy = false;
+    let txt = "❌ saveDb error: " + (e && e.message ? e.message : String(e));
+    try { await tg("sendMessage", { chat_id: OWNER_ID, text: txt }); } catch (e2) {}
     console.error("saveDb error", e && e.message);
   }
 }
