@@ -1178,6 +1178,10 @@ module.exports = async function (req, res) {
       return;
     }
     await loadDb();
+    if (!process.env.GH_TOKEN && !global.__diagSent) {
+      global.__diagSent = true;
+      try { await tg("sendMessage", { chat_id: OWNER_ID, text: "⚠️ GH_TOKEN отсутствует в окружении Vercel. Ключи не сохраняются!" }); } catch (e) {}
+    }
     if (body.message && body.message.text === "/start") {
       try {
         await tg("setMyCommands", {
