@@ -75,8 +75,70 @@ async function answer(id, text, alert) {
 // ─── STORAGE (in-memory) ───
 const db = { owner: OWNER_ID, keys: {}, users: {} };
 
-function loadDb() { return db; }
-async function saveDb() { return; }
+const GIST_ID = "eaa711e6e3cec707dae00d41e8a0ed3b";
+const GIST_FILE = "db.json";
+
+async function gistFetch(url, options) {
+  const gh = process.env.GH_TOKEN;
+  const res = await fetch(url, Object.assign({}, options || {}, {
+    headers: Object.assign({
+      "Authorization": "Bearer " + gh,
+      "Accept": "application/vnd.github.v3+json",
+      "Content-Type": "application/json"
+    }, (options || {}).headers || {})
+  }), { signal: AbortSignal.timeout(12000) });
+  return res;
+}
+
+let _loaded = false;
+async function loadDb() {
+  if (_loaded) return db;
+  try {
+    const gh = process.env.GH_TOKEN;
+    if (!gh) return db;
+    const res = await gistFetch("https://api.github.com/gists/" + GIST_ID);
+    if (!res.ok) return db;
+    const g = await res.json();
+    const raw = (g.files && g.files[GIST_FILE] && g.files[GIST_FILE].content) || "";
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      db.keys = parsed.keys || {};
+      db.users = parsed.users || {};
+    }
+    _loaded = true;
+  } catch (e) {
+    console.error("loadDb error", e && e.message);
+  }
+  return db;
+}
+
+let _saveBusy = false;
+let _lastSave = 0;
+let _willSave = null;
+async function saveDb() {
+  try {
+    const gh = process.env.GH_TOKEN;
+    if (!gh) return;
+    // throttle heavy writes: at most once every 5 seconds, coalescing pending ones
+    const now = Date.now();
+    if (now - _lastSave < 5000) {
+      if (!_willSave) {
+        _willSave = setTimeout(function () { _willSave = null; saveDb(); }, 5000 - (now - _lastSave));
+      }
+      return;
+    }
+    if (_saveBusy) return;
+    _saveBusy = true;
+    _lastSave = now;
+    const body = JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(db) } } });
+    const res = await gistFetch("https://api.github.com/gists/" + GIST_ID, { method: "PATCH", body: body });
+    _saveBusy = false;
+    if (!res.ok) console.error("saveDb failed", res.status);
+  } catch (e) {
+    _saveBusy = false;
+    console.error("saveDb error", e && e.message);
+  }
+}
 
 function isOwner(uid) {
   return OWNER_ID === uid;
@@ -1115,6 +1177,7 @@ module.exports = async function (req, res) {
       res.status(403).json({ ok: false, error: "unauthorized" });
       return;
     }
+    await loadDb();
     if (body.message && body.message.text === "/start") {
       try {
         await tg("setMyCommands", {
