@@ -8,10 +8,6 @@
     {
       "src": "api/page.js",
       "use": "@vercel/node"
-    },
-    {
-      "src": "api/testgist.js",
-      "use": "@vercel/node"
     }
   ],
   "routes": [
@@ -22,10 +18,6 @@
     {
       "src": "/api/page",
       "dest": "/api/page.js"
-    },
-    {
-      "src": "/api/testgist",
-      "dest": "/api/testgist.js"
     }
   ]
 }
